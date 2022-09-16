@@ -24,9 +24,10 @@ class hillasg(Stage):
 
     """
 
-    def __init__(self, **std_kwargs):
+    def __init__(self, flux_table, **std_kwargs):
 
-        expected_params = ("flux_table",)
+        self.flux_table = flux_table
+        expected_params = []
 
         # init base class
         super().__init__(
@@ -36,7 +37,7 @@ class hillasg(Stage):
 
     def setup_function(self):
 
-        self.flux_table = load_2d_table(self.params.flux_table.value)
+        self.flux_table = load_2d_table(self.flux_table)
 
         self.data.representation = self.calc_mode
         if self.data.is_map:
@@ -62,7 +63,6 @@ class hillasg(Stage):
         for container in self.data:
             container["nu_flux_nominal"] = np.empty((container.size, 3), dtype=FTYPE)
             container["nubar_flux_nominal"] = np.empty((container.size, 3), dtype=FTYPE)
-            # container['nu_flux'] = np.empty((container.size, 2), dtype=FTYPE)
 
         # don't forget to un-link everything again
         self.data.unlink_containers()
