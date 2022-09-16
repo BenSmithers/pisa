@@ -7,7 +7,11 @@ from pisa.utils.profiler import profile
 from pisa import FTYPE, TARGET
 from pisa.core.stage import Stage
 
-from pisa.utils.numba_tools import WHERE, myjit
+from pisa.utils.log import logging
+
+from numba import njit, prange  # trivially parallelize for-loops
+
+
 
 PIVOT = FTYPE(100.0e3)
 
@@ -45,6 +49,7 @@ class astrophysical(Stage):
         """
         Setup the nominal flux
         """
+        logging.debug("seting up astro stage")
         self.data.representation = self.calc_mode
         for container in self.data:
             container["astro_weights"] = np.ones(container.size, dtype=FTYPE)
@@ -92,11 +97,13 @@ class astrophysical(Stage):
     @profile
     def apply_function(self):
         for container in self.data:
-            container["astro_weights"] = (
+            container["weights"] = (
                 container["initial_weights"] * container["astro_flux"]
             )
 
+            container.mark_changed("weights")
 
+@njit
 def spectral_index_scale(true_energy, delta_index):
     """
     Calculate spectral index scale.
@@ -105,7 +112,7 @@ def spectral_index_scale(true_energy, delta_index):
     """
     return np.power(true_energy / PIVOT, delta_index)
 
-
+@njit
 def apply_sys_loop(
     true_energy,
     true_coszen,
