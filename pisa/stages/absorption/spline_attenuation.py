@@ -62,6 +62,8 @@ class spline_attenuation(Stage):
             logging.debug("Checking {}".format(name))
             subset = list(filter(lambda key: name in key, self._spline_names))
 
+            container["spline_scales"] = np.ones(container.shape, dtype=FTYPE)
+
             assert len(subset)>=1, "found odd number of matches: {}".format(subset)
             if len(subset)==1:
                 self._splines[name] = ps.SplineTable(subset[0])
@@ -73,7 +75,9 @@ class spline_attenuation(Stage):
             assert len(subset)==1, "Should only be one match: found {}".format(subset)
             self._splines[name]=ps.SplineTable(subset[0])
 
-    def apply_function(self):
+            
+
+    def compute_function(self):
         
         for container in self.data:
             name =container.name.split("_")[0]
@@ -82,9 +86,15 @@ class spline_attenuation(Stage):
             factor = (int(container["nubar"]<0)*self.params.nubar_scale.value.m_as("dimensionless")
                         + int(container["nubar"]>0)*self.params.nu_scale.value.m_as("dimensionless"))
 
-            scales = self._splines[name].evaluate_simple((
+            container["spline_scales"] = self._splines[name].evaluate_simple((
                     np.log10(container["true_energy"]),
                     container["true_coszen"],
                     [factor,]
             ))
-            container["weights"] = container["weights"]*scales
+            container.mark_changed("spline_scales")
+
+    def apply_function(self):
+        for container in self.data:
+            container["weights"] = container["weights"]*container["spline_scales"]
+
+            container.mark_changed("weights")
