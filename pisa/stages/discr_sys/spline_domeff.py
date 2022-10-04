@@ -66,6 +66,8 @@ class spline_domeff(Stage):
 
 
         for container in self.data:
+            container["domeff_splines"] = np.ones(container.size)
+
             if container.size==0:
                 continue
             
@@ -104,7 +106,12 @@ class spline_domeff(Stage):
             mask = scales < 0.0
             scales[mask] = 0.0
 
+            container["domeff_splines"] = scales
+
             logging.debug("reweight pisa")
-            container["weights"] = container["weights"]*scales
+    
+    def apply_function(self):
+        for container in self.data:
+            container["weights"] = container["weights"]*container["domeff_splines"]
 
             container.mark_changed("weights")

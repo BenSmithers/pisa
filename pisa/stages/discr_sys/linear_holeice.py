@@ -70,17 +70,12 @@ class linear_holeice(Stage):
         for container in self.data:
             # SEE np.digitize
 
-
-
             container["h0_energy_scale"] = self._scales_energy_0[np.digitize(container["true_energy"], self._energy_bins[:-1])]
             container["h0_czen_scale"] = self._scales_czen_0[np.digitize(container["true_coszen"], self._czen_bins[:-1])]
             container["h1_energy_scale"] = self._scales_energy_1[np.digitize(container["true_energy"], self._energy_bins[:-1])]
             container["h1_czen_scale"] = self._scales_czen_1[np.digitize(container["true_coszen"], self._czen_bins[:-1])]
 
-            container.mark_changed("h0_energy_scale")
-            container.mark_changed("h0_czen_scale")
-            container.mark_changed("h1_energy_scale")
-            container.mark_changed("h1_czen_scale")
+
 
     def apply_function(self):
 

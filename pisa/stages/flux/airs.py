@@ -31,8 +31,8 @@ class airs(Stage):
     """
 
     def __init__(self, airs_spline, **std_kwargs):
-        _airs_spline_loc = find_resource(airs_spline)
-        self.airs_spline = photospline.SplineTable(_airs_spline_loc)
+        self._airs_spline_loc = find_resource(airs_spline)
+        
 
         expected_params = [
             "airs_scale",
@@ -47,6 +47,8 @@ class airs(Stage):
         """
         Uses the splines to quickly evaluate the 1-sigma perturbtations at each of the events
         """
+
+        self.airs_spline = photospline.SplineTable(self._airs_spline_loc)
 
         # consider 'true_coszen" and 'true_energy' containers
         for container in self.data:
@@ -67,3 +69,5 @@ class airs(Stage):
             container["weights"] *= 1.0 + container[
                 "airs_1s_perturb"
             ] * self.params.airs_scale.value.m_as("dimensionless")
+
+            container.mark_changed("weights")
