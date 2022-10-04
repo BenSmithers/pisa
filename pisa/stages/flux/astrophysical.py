@@ -5,6 +5,8 @@ import numpy as np
 
 from pisa.utils.profiler import profile
 from pisa import FTYPE, TARGET
+from pisa import ureg
+
 from pisa.core.stage import Stage
 
 from pisa.utils.log import logging
@@ -13,7 +15,7 @@ from numba import njit, prange  # trivially parallelize for-loops
 
 
 
-PIVOT = FTYPE(100.0e3)
+PIVOT = 1.0e5
 
 
 class astrophysical(Stage):
@@ -32,7 +34,7 @@ class astrophysical(Stage):
 
     def __init__(self, **std_kwargs):
         self._central_gamma = FTYPE(-2.5)
-        self._central_norm = FTYPE(0.787e-18)
+        self._central_norm = FTYPE((1e-4)*1.0e-18)
 
         self._e_ratio = FTYPE(1.0)
         self._mu_ratio = FTYPE(1.0)

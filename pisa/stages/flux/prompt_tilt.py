@@ -35,7 +35,7 @@ class prompt_tilt(Stage):
             container["nu_flux"] =  np.full((container.size, 3), np.NaN, dtype=FTYPE)
 
     @profile
-    def compute_function(self):
+    def apply_function(self):
         for container in self.data:
             nubar = container["nubar"]
             if nubar > 0: flux_key = "nu_flux_nominal"
