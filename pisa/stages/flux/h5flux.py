@@ -92,26 +92,23 @@ class h5flux(Stage):
                 fluxkey = "nu_flux_nominal"
                 key+="nu"
 
-            if "e" in container.name:
-                key+="e"
-                index=0
-                
-            elif "mu" in container.name:
-                key+="mu"
-                index=1
-            elif "tau" in container.name:
-                key+="tau"
-                index=2
-            else:
-                raise Exception()
+
 
             #container[ nuflux/nubarflux ][flavor]
             
             flux = np.zeros((3, container.size),dtype=FTYPE)
-            flux[index] += self.fluxes[key](
-                container["true_coszen"], 
-                np.log10(container["true_energy"]),
-                grid=False)
+            flux[0] += self.fluxes[key+"e"](
+                    container["true_coszen"], 
+                    np.log10(container["true_energy"]),
+                    grid=False)
+            flux[1] += self.fluxes[key+"mu"](
+                    container["true_coszen"], 
+                    np.log10(container["true_energy"]),
+                    grid=False)
+            flux[2] += self.fluxes[key+"tau"](
+                    container["true_coszen"], 
+                    np.log10(container["true_energy"]),
+                    grid=False)
 
             container[fluxkey] += np.transpose(flux) 
 

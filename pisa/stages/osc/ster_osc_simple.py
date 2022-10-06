@@ -177,4 +177,4 @@ class ster_osc_simple(Stage):
                 + container["nu_flux"][:, 2] * container["prob_tau"]
             )
                 
-            container["weights"] = container["weights"] * scales
+            container["weights"] = container["weights"] * np.abs(scales)
