@@ -69,13 +69,9 @@ class barr_gradients(Stage):
                 """
                     evaluate the gradient thingy for each of these 
                 """
-
+                container["barr_scale"] = np.zeros(container.size)
                 container[param] = np.zeros(container.size)
-                
-                container["nu_flux"] = np.full((container.size, 3), np.NaN, dtype=FTYPE)
-
-
-
+                                
                 if container.size==0:
                     continue
                 
@@ -88,92 +84,20 @@ class barr_gradients(Stage):
 
     @profile
     def compute_function(self):
-        
-
         for container in self.data:
-            nubar = container["nubar"]
-            if nubar > 0: flux_key = "nu_flux_nominal"
-            elif nubar < 0: flux_key = "nubar_flux_nominal"
-            negative_mask = container["nu_flux"] < 0
-            if np.any(negative_mask):
-                container["nu_flux"][negative_mask] = 0.0
-
             # modify container[flux_key]
-
-            scale = (
-                container["barr_grad_WP"]*self.params.barr_grad_WP.value.m_as("dimensionless") + 
-                container["barr_grad_WM"]*self.params.barr_grad_WM.value.m_as("dimensionless") +   
-                container["barr_grad_YP"]*self.params.barr_grad_YP.value.m_as("dimensionless") + 
-                container["barr_grad_YM"]*self.params.barr_grad_YM.value.m_as("dimensionless") + 
-                container["barr_grad_ZP"]*self.params.barr_grad_ZP.value.m_as("dimensionless") + 
-                container["barr_grad_ZM"]*self.params.barr_grad_ZM.value.m_as("dimensionless") 
+            container["barr_scale"] = (
+                (1+container["barr_grad_WP"]*self.params.barr_grad_WP.value.m_as("dimensionless")) * 
+                (1+container["barr_grad_WM"]*self.params.barr_grad_WM.value.m_as("dimensionless")) *   
+                (1+container["barr_grad_YP"]*self.params.barr_grad_YP.value.m_as("dimensionless")) * 
+                (1+container["barr_grad_YM"]*self.params.barr_grad_YM.value.m_as("dimensionless")) * 
+                (1+container["barr_grad_ZP"]*self.params.barr_grad_ZP.value.m_as("dimensionless")) * 
+                (1+container["barr_grad_ZM"]*self.params.barr_grad_ZM.value.m_as("dimensionless")) 
                 )
+            container.mark_changed("barr_scale")
 
-            apply_sys_loop(
-                container["true_energy"],
-                container["true_coszen"],
-                self.params.deltagamma.value.m_as("dimensionless"),
-                PIVOT,
-                container[flux_key],
-                scale,
-                out=container["nu_flux"],
-            )
-
-            container.mark_changed("nu_flux")
-            negative_mask = container["nu_flux"] < 0
-            if np.any(negative_mask):
-                container["nu_flux"][negative_mask] = 0.0
-
-            container.mark_changed("nu_flux")
-
-
-@njit
-def spectral_index_scale(true_energy, energy_pivot, delta_index):
-    """
-      Calculate spectral index scale.
-      Adjusts the weights for events in an energy dependent way according to a
-      shift in spectral index, applied about a user-defined energy pivot.
-      """
-    return np.power((true_energy / energy_pivot), delta_index)
-
-
-@njit(parallel=True if TARGET == "parallel" else False)
-def apply_sys_loop(
-    true_energy,
-    true_coszen,
-    delta_index,
-    energy_pivot,
-    nu_flux_nominal,
-    gradients,
-    out,
-):
-    """
-    Calculation:
-      1) Start from nominal flux
-      2) Apply spectral index shift
-      3) Add contributions from MCEq-computed gradients
-
-    Array dimensions :
-        true_energy : [A]
-        true_coszen : [A]
-        nubar : scalar integer
-        delta_index : scalar float
-        energy_pivot : scalar float
-        nu_flux_nominal : [A,B]
-        gradients : [A,B,C]
-        gradient_params : [C]
-        out : [A,B] (sys flux)
-    where:
-        A = num events
-        B = num flavors in flux (=3, e.g. e, mu, tau)
-        C = num gradients
-    Not that first dimension (of length A) is vectorized out
-    """
-
-    n_evts, n_flavs = nu_flux_nominal.shape
-
-    for event in prange(n_evts):
-        spec_scale = spectral_index_scale(true_energy[event], energy_pivot, delta_index)
-        for flav in range(n_flavs):
-            out[event, flav] = nu_flux_nominal[event, flav] * spec_scale
-            out[event, flav] += gradients[event]
+    def apply_function(self):
+        for container in self.data:
+            container["weights"] = container["weights"]*container["barr_scale"] \
+                                    *np.power(container["true_energy"]/PIVOT, self.params.deltagamma.value.m_as("dimensionless"))
+            container.mark_changed("weights")
