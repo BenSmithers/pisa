@@ -2,9 +2,10 @@
 stage to implement getting the contribution to fluxes from astrophysical neutrino sources
 """
 import numpy as np
+from math import log10
 
 from pisa.utils.profiler import profile
-from pisa import FTYPE, TARGET
+from pisa import FTYPE, TARGET, PISA_NUM_THREADS
 from pisa import ureg
 
 from pisa.core.stage import Stage
@@ -14,13 +15,20 @@ from pisa.utils.log import logging
 from numba import njit, prange  # trivially parallelize for-loops
 
 
+try:
+    import nuSQUIDSpy as nsq
+except ImportError:
+    import nuSQuIDS as nsq
 
-PIVOT = 1.0e5
+
+PIVOT = FTYPE(1.0e5)
 
 
 class astrophysical(Stage):
     """
-    Stage to apply power law astrophysical fluxes
+    Stage to weight the pipeline to an astrophysical flux. 
+    This stage stands in place of a typical (flux + osc) stage combo
+
 
     Parameters
     ----------
@@ -29,16 +37,31 @@ class astrophysical(Stage):
             astro_delta : quantity (dimensionless)
             astro_norm : quantity (dimensionless)
 
-    TODO: flavor ratio as a parameter? Save for later.
+    TODO: Add more astrophysical flux implementations
+        - Broken power law
+        - whatever else is needed... 
     """
 
-    def __init__(self, **std_kwargs):
-        self._central_gamma = FTYPE(-2.5)
-        self._central_norm = FTYPE((1e-4)*1.0e-18)
+    def __init__(self, 
+            e_ratio = 1.0,
+            mu_ratio = 1.0,
+            tau_ratio = 1.0,
+            rel_err=None,
+            abs_err=None,
+            **std_kwargs):
 
-        self._e_ratio = FTYPE(1.0)
-        self._mu_ratio = FTYPE(1.0)
-        self._tau_ratio = FTYPE(1.0)
+        self.num_neutrinos = 4 #flavors 
+
+        self._central_gamma = FTYPE(-2.5)
+        self._central_norm = FTYPE(1.0e-18)
+
+        self._e_ratio = FTYPE(e_ratio)
+        self._mu_ratio = FTYPE(mu_ratio)
+        self._tau_ratio = FTYPE(tau_ratio)
+
+        self.rel_err = rel_err.m_as("dimensionless") if rel_err is not None else 1.0e-6
+        self.abs_err = abs_err.m_as("dimensionless") if abs_err is not None else 1.0e-6
+        self.concurrent_threads = PISA_NUM_THREADS if TARGET == "parallel" else 1
 
         expected_params = ("astro_delta", "astro_norm")
 
@@ -47,6 +70,52 @@ class astrophysical(Stage):
             **std_kwargs,
         )
 
+    def get_initial_state(self)->np.ndarray:
+        """ 
+        The initial state should be a power-law flux with the relevant flavor ratios! 
+        """
+        flavors = self.num_neutrinos 
+        neutrinos = 2
+        inistate = np.zeros(shape=(flavors, neutrinos,len(self.zeniths),  len(self.energies) ))
+
+        for i_flav in range(flavors):
+            for j_nu in range(neutrinos):
+                _energies, _zeniths = np.meshgrid(self.energies , self.zeniths)
+
+                inistate[i_flav][j_nu] = self._central_norm*np.power((_energies/(1e9)) / PIVOT, self._central_gamma)
+
+        return np.transpose(inistate, axes=(2, 3, 1, 0))
+
+    def setup_squid(self):
+        """
+        Sets up a nusquids object for astrophysical fluxes 
+        The main goal of this is to apply attenuation to the astrophysical flux 
+        """
+        this_osc = nsq.nuSQUIDSAtm(
+                self.zeniths,
+                self.energies,
+                self.num_neutrinos,
+                nsq.NeutrinoType.both,
+                True # earth interactions
+        )
+
+        this_osc.Set_rel_error(self.rel_err)
+        this_osc.Set_abs_error(self.abs_err)
+        this_osc.Set_EvalThreads(self.concurrent_threads)
+        this_osc.Set_IncludeOscillations(False) # NO OSCILLATIONS
+
+        this_osc.Set_MixingAngle(0,1,0.563942)
+        this_osc.Set_MixingAngle(0,2,0.154085)
+        this_osc.Set_MixingAngle(1,2,0.785398)
+        this_osc.Set_SquareMassDifference(1,7.65e-05)
+        this_osc.Set_SquareMassDifference(2,0.00247)
+
+        this_osc.Set_TauRegeneration(True)
+
+        this_osc.Set_GSL_step(nsq.GSL_STEP_FUNCTIONS.GSL_STEP_RK4)
+
+        return this_osc
+
     def setup_function(self):
         """
         Setup the nominal flux
@@ -54,19 +123,31 @@ class astrophysical(Stage):
         logging.debug("seting up astro stage")
         self.data.representation = self.calc_mode
         for container in self.data:
-            container["astro_weights"] = np.ones(container.size, dtype=FTYPE)
-            container["astro_flux"] = np.ones(container.size, dtype=FTYPE)
             container["astro_flux_nominal"] = np.ones(container.size, dtype=FTYPE)
+
+        nsq_units = nsq.Const()
+
+        min_e = 10*nsq_units.GeV
+        max_e = 100*nsq_units.PeV
+
+        e_nodes = 100
+        cth_nodes = 80
+
+        self.energies = np.logspace(log10(min_e), log10(max_e), e_nodes)
+        self.zeniths = np.linspace(-1, 1, cth_nodes)
+
+        self.squid_atm = self.setup_squid()
+        self.squid_atm.Set_initial_state(self.get_initial_state(), nsq.Basis.flavor)
+        self.squid_atm.EvolveState()
 
         # Loop over containers
         for container in self.data:
+            scale_e = container["true_energy"]*(1e9)
 
-            # Grab containers here once to save time
-            true_energy = container["true_energy"]
+            for i_evt in range(container.size):
+                i_nu = 0 if container["nubar"] < 0 else 1
+                container["astro_flux_nominal"][i_evt] = self.squid_atm.EvalFlavor( container["flav"], container["true_coszen"][i_evt],  scale_e[i_evt], i_nu )
 
-            container["astro_flux_nominal"] = self._central_norm * np.power(
-                (true_energy / PIVOT), self._central_gamma
-            )
 
             # TODO split this up so that we can use flavor ratios
             # nu_flux_nominal[:,0] = _precalc*self._e_ratio
@@ -75,74 +156,26 @@ class astrophysical(Stage):
 
             container.mark_changed("astro_flux_nominal")
 
-    @profile
-    def compute_function(self):
-        """
-        Tilt it, scale it, bop it
-        """
-        self.data.representation = self.calc_mode
-
-        delta = self.params.astro_delta.value.m_as("dimensionless")
-        norm = self.params.astro_norm.value
-
-        for container in self.data:
-            apply_sys_loop(
-                container["true_energy"],
-                container["true_coszen"],
-                FTYPE(delta),
-                FTYPE(norm),
-                container["astro_flux_nominal"],
-                out=container["astro_flux"],
-            )
-            container.mark_changed("astro_flux")
 
     @profile
     def apply_function(self):
         for container in self.data:
-            container["weights"] = (
-                container["initial_weights"] * container["astro_flux"]
-            )
+            if container["flav"]==0:
+                scale = self._e_ratio
+            elif container["flav"]==1:
+                scale = self._mu_ratio
+            elif container["flav"]==2:
+                scale = self._tau_ratio
+            else:
+                logging.warn(container.name)
+                logging.fatal("Unknown flavor {}".format(container["flav"]))
+
+            if container.size==0:
+                continue
+
+
+            container["weights"] = container["weights"] * container["astro_flux_nominal"] * scale \
+                * self.params.astro_norm.value.m_as("dimensionless") \
+                * np.power(container["true_energy"]/PIVOT, self.params.astro_delta.value.m_as("dimensionless"))
 
             container.mark_changed("weights")
-
-@njit
-def spectral_index_scale(true_energy, delta_index):
-    """
-    Calculate spectral index scale.
-    Adjusts the weights for events in an energy dependent way according to a
-    shift in spectral index, applied about a user-defined energy pivot.
-    """
-    return np.power(true_energy / PIVOT, delta_index)
-
-@njit
-def apply_sys_loop(
-    true_energy,
-    true_coszen,
-    delta_index,
-    norm,
-    astroflux_nominal,
-    out,
-):
-    """
-    Calculation:
-      1) Start from nominal flux
-      2) Apply spectral index shift
-      3) Add contributions from MCEq-computed gradients
-
-    Array dimensions :
-        true_energy : [A]
-        true_coszen : [A]
-        delta_index : scalar float
-        norm : scalar float
-        astroflux_nominal : [A,B]
-        out : [A,B] (sys flux)
-    where:
-        A = num events
-        B = num flavors in flux (=3, e.g. e, mu, tau)
-    """
-
-    n_evts = astroflux_nominal.shape[0]
-
-    for event in range(n_evts):
-        spec_scale = spectral_index_scale(true_energy[event], delta_index)
-        out[event] = norm * astroflux_nominal[event] * spec_scale
