@@ -148,7 +148,7 @@ class astrophysical(Stage):
                 i_nu = 0 if container["nubar"] < 0 else 1
                 container["astro_flux_nominal"][i_evt] = self.squid_atm.EvalFlavor( container["flav"], container["true_coszen"][i_evt],  scale_e[i_evt], i_nu )
 
-
+            container["astro_flux_nominal"]= np.abs(container["astro_flux_nominal"])
             # TODO split this up so that we can use flavor ratios
             # nu_flux_nominal[:,0] = _precalc*self._e_ratio
             # nu_flux_nominal[:,1] = _precalc*self._mu_ratio

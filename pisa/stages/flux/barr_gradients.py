@@ -42,7 +42,7 @@ class barr_gradients(Stage):
             "barr_grad_ZM"
         ]
 
-        expected_params = self._barr_params + ["deltagamma",]
+        expected_params = self._barr_params + ["deltagamma", "conv_norm"]
 
 
         super().__init__(
@@ -86,7 +86,7 @@ class barr_gradients(Stage):
     def compute_function(self):
         for container in self.data:
             # modify container[flux_key]
-            container["barr_scale"] = (
+            container["barr_scale"] = ( self.params.conv_norm.value.m_as("dimensionless") *
                 (1+container["barr_grad_WP"]*self.params.barr_grad_WP.value.m_as("dimensionless")) * 
                 (1+container["barr_grad_WM"]*self.params.barr_grad_WM.value.m_as("dimensionless")) *   
                 (1+container["barr_grad_YP"]*self.params.barr_grad_YP.value.m_as("dimensionless")) * 
@@ -94,6 +94,8 @@ class barr_gradients(Stage):
                 (1+container["barr_grad_ZP"]*self.params.barr_grad_ZP.value.m_as("dimensionless")) * 
                 (1+container["barr_grad_ZM"]*self.params.barr_grad_ZM.value.m_as("dimensionless")) 
                 )
+            #container["barr_scale"][container["barr_scale"] < 0.0]=0.0
+            
             container.mark_changed("barr_scale")
 
     def apply_function(self):

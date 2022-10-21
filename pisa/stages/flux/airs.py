@@ -48,16 +48,17 @@ class airs(Stage):
         Uses the splines to quickly evaluate the 1-sigma perturbtations at each of the events
         """
 
-        self.airs_spline = photospline.SplineTable(self._airs_spline_loc)
+        airs_spline = photospline.SplineTable(self._airs_spline_loc)
 
         # consider 'true_coszen" and 'true_energy' containers
         for container in self.data:
-            if len(container["true_energy"]) == 0:
+            if container.size==0:
                 container["airs_1s_perturb"] = np.zeros(container.size, dtype=FTYPE)
             else:
-                container["airs_1s_perturb"] = self.airs_spline.evaluate_simple(
+                container["airs_1s_perturb"] = airs_spline.evaluate_simple(
                     (np.log10(container["true_energy"]), container["true_coszen"])
                 )
+            
             container.mark_changed("airs_1s_perturb")
 
     @profile

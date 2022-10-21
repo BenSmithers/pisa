@@ -76,7 +76,6 @@ class linear_holeice(Stage):
             container["h1_czen_scale"] = self._scales_czen_1[np.digitize(container["true_coszen"], self._czen_bins[:-1])]
 
 
-
     def apply_function(self):
 
 

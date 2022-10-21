@@ -91,6 +91,9 @@ class spline_attenuation(Stage):
                     container["true_coszen"],
                     [factor,]
             ))
+
+            container["spline_scales"][container["spline_scales"]<0.0] = 0.0
+
             container.mark_changed("spline_scales")
 
     def apply_function(self):

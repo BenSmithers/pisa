@@ -1,5 +1,16 @@
 """
-This stage combines two into one! It loads in a flux from an hdf5 file and carries out the neutrino oscillations on it 
+This stage implements both the 
+    - neutrino flux implementation
+    - and the oscillation stage
+
+We load in an h5 file containing the neutrino flux around the Earth. 
+Then propagate it according to neutrino oscilation parameters. 
+The neutrino oscillations are not variable parameters, but fixed properties of the stage 
+
+One major note that separates this from the other osc stage? 
+This includes tau regeneration; an important element of high-energy analyses
+
+Ben Smithers
 """
 
 import numpy as np
@@ -20,11 +31,23 @@ except ImportError:
     import nuSQuIDS as nsq
 
 class h5squid(Stage):
+    """
+    Parameters:
+    ----------
+    th14 : theta_14 mixing angle 
+    th24 : theta_24 mixing angle
+    th34 : theta_34 mixing angle 
+    dmsq : \Delta_{41}^{2} m mass-squared splitting (fourth to first mass state)
+    fluxfile : hdf5 file containing pre-generated fluxes from MCEq. Expects key for energy nodes, cos(theta) nodes, and 2D flux table per component
+    convmode : bool, specifies whether we'll access the prompt (pr) or conventional (conv) components from the file 
+    rel_err : error tolerance passed to nuSQuIDS
+    abds_err: error tolerance passed to nuSQuIDS
+    """
     def __init__(self,
-            th14,
-            th24,
-            th34,
-            dmsq,
+            th14:float,
+            th24:float,
+            th34:float,
+            dmsq:float,
             fluxfile:str,
             convmode=True,
             rel_err=None,
@@ -54,6 +77,9 @@ class h5squid(Stage):
 
 
     def setup_squid(self):
+        """
+        Prepare a nuSQuIDS atmosphere object we'll use for flux calculations 
+        """
         this_osc = nsq.nuSQUIDSAtm(
                 self.zeniths,
                 self.energies,
@@ -70,8 +96,6 @@ class h5squid(Stage):
         this_osc.Set_MixingAngle(0,1,0.563942)
         this_osc.Set_MixingAngle(0,2,0.154085)
         this_osc.Set_MixingAngle(1,2,0.785398)
-
-        #sterile parameters 
 
         this_osc.Set_SquareMassDifference(1,7.65e-05)
         this_osc.Set_SquareMassDifference(2,0.00247)
@@ -186,6 +210,10 @@ class h5squid(Stage):
         self.data.unlink_containers()
 
     def compute_function(self):
+        """
+            Should really only have to be called once! 
+            This evaluates the calculated flux for each event. 
+        """
         for container in self.data:
             scale_e = container["true_energy"]*(1e9)
             for i in range(container.shape[0]):
