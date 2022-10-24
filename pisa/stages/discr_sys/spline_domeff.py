@@ -107,6 +107,7 @@ class spline_domeff(Stage):
             scales[mask] = 0.0
 
             container["domeff_splines"] = scales
+            container.mark_changed("domeff_splines")
 
             logging.debug("reweight pisa")
     
