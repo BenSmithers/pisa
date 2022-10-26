@@ -63,7 +63,6 @@ class barr_gradients(Stage):
             for key in dfile.keys():
                 grads[param][key] = np.array(dfile[key][:])
 
-
         for param in self._barr_params:
             for container in self.data:
                 """
@@ -75,10 +74,17 @@ class barr_gradients(Stage):
                 if container.size==0:
                     continue
                 
-                interp = RectBivariateSpline( grads[param]["costh_nodes"], grads[param]["energy_nodes"],grads[param][container.name.split("_")[0]])
+                if container["nubar"]<0:
+                    e_effect = RectBivariateSpline( grads[param]["costh_nodes"], grads[param]["energy_nodes"],grads[param]["nuebar"])
+                    mu_effect = RectBivariateSpline( grads[param]["costh_nodes"], grads[param]["energy_nodes"],grads[param]["numubar"])
+                else:
+                    e_effect = RectBivariateSpline( grads[param]["costh_nodes"], grads[param]["energy_nodes"],grads[param]["nue"])
+                    mu_effect = RectBivariateSpline( grads[param]["costh_nodes"], grads[param]["energy_nodes"],grads[param]["numu"])
                 
                 #logging.debug("shape out is {} versus {} expected".format(np.shape(out), container.size))
-                container[param] =  interp(container["true_coszen"], container["true_energy"], grid=False)
+                # no tau effect since there are no conventional taus 
+                container[param] = (e_effect(container["true_coszen"], container["true_energy"], grid=False)*container["flux_contribution"][:,0] 
+                                        + mu_effect(container["true_coszen"], container["true_energy"], grid=False)*container["flux_contribution"][:,1])
 
                 container.mark_changed(param)
 
@@ -87,12 +93,12 @@ class barr_gradients(Stage):
         for container in self.data:
             # modify container[flux_key]
             container["barr_scale"] = ( self.params.conv_norm.value.m_as("dimensionless") *
-                (1+container["barr_grad_WP"]*self.params.barr_grad_WP.value.m_as("dimensionless")) * 
-                (1+container["barr_grad_WM"]*self.params.barr_grad_WM.value.m_as("dimensionless")) *   
-                (1+container["barr_grad_YP"]*self.params.barr_grad_YP.value.m_as("dimensionless")) * 
-                (1+container["barr_grad_YM"]*self.params.barr_grad_YM.value.m_as("dimensionless")) * 
-                (1+container["barr_grad_ZP"]*self.params.barr_grad_ZP.value.m_as("dimensionless")) * 
-                (1+container["barr_grad_ZM"]*self.params.barr_grad_ZM.value.m_as("dimensionless")) 
+                (1+container["weighted_aeff"]*container["barr_grad_WP"]*self.params.barr_grad_WP.value.m_as("dimensionless")) * 
+                (1+container["weighted_aeff"]*container["barr_grad_WM"]*self.params.barr_grad_WM.value.m_as("dimensionless")) *   
+                (1+container["weighted_aeff"]*container["barr_grad_YP"]*self.params.barr_grad_YP.value.m_as("dimensionless")) * 
+                (1+container["weighted_aeff"]*container["barr_grad_YM"]*self.params.barr_grad_YM.value.m_as("dimensionless")) * 
+                (1+container["weighted_aeff"]*container["barr_grad_ZP"]*self.params.barr_grad_ZP.value.m_as("dimensionless")) * 
+                (1+container["weighted_aeff"]*container["barr_grad_ZM"]*self.params.barr_grad_ZM.value.m_as("dimensionless")) 
                 )
             #container["barr_scale"][container["barr_scale"] < 0.0]=0.0
             
