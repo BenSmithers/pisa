@@ -57,7 +57,10 @@ class spline_attenuation(Stage):
         for container in self.data:
             """
             loops over non-linked containers and the ones that things made linked 
-            """     
+            """
+            if container.size==0:
+                continue
+
             name =container.name.split("_")[0]
             logging.debug("Checking {}".format(name))
             subset = list(filter(lambda key: name in key, self._spline_names))
@@ -98,6 +101,8 @@ class spline_attenuation(Stage):
 
     def apply_function(self):
         for container in self.data:
+            if container.size==0:
+                continue
             container["weights"] = container["weights"]*container["spline_scales"]
 
             container.mark_changed("weights")

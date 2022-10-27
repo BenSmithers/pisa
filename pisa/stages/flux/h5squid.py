@@ -230,28 +230,20 @@ class h5squid(Stage):
             container["flux_contribution"] = np.zeros((container.size, 3), dtype=FTYPE)
             container['evt_flux'] = np.zeros(container.size, dtype=FTYPE)
 
-        # don't forget to un-link everything again
-        self.data.unlink_containers()
-
-    def compute_function(self):
-        """
-            Should really only have to be called once! 
-            This evaluates the calculated flux for each event. 
-        """
-        for container in self.data:
+        
             scale_e = container["true_energy"]*(1e9)
             for i in range(container.shape[0]):
                 
                 i_nu = 0 if container["nubar"] < 0 else 1
 
                 if self.separate_flux:
-                    container["flux_contribution"][i][0] = self.e_atm.EvalFlavor( container["flav"], container["true_coszen"][i],  scale_e[i], i_nu )
-                    container["flux_contribution"][i][1] = self.mu_atm.EvalFlavor( container["flav"], container["true_coszen"][i],  scale_e[i], i_nu )
+                    container["flux_contribution"][i][0] = abs(self.e_atm.EvalFlavor( container["flav"], container["true_coszen"][i],  scale_e[i], i_nu ))
+                    container["flux_contribution"][i][1] = abs(self.mu_atm.EvalFlavor( container["flav"], container["true_coszen"][i],  scale_e[i], i_nu ))
                     if not self._convmode:
-                        container["flux_contribution"][i][2] = self.tau_atm.EvalFlavor( container["flav"], container["true_coszen"][i],  scale_e[i], i_nu )
+                        container["flux_contribution"][i][2] = abs(self.tau_atm.EvalFlavor( container["flav"], container["true_coszen"][i],  scale_e[i], i_nu ))
 
                     norm = np.sum(container["flux_contribution"][i])
-                    container["evt_flux"] = norm
+                    container["evt_flux"][i]= 0 if norm< 1e-30 else norm
 
                     container["flux_contribution"][i][0] /= norm
                     container["flux_contribution"][i][1] /= norm
@@ -268,6 +260,9 @@ class h5squid(Stage):
 
             if (container.size!=0):
                 logging.debug("Min and max {} and {}".format(np.min(container["flux_contribution"]), np.max(container["flux_contribution"])))
+        
+        # don't forget to un-link everything again
+        self.data.unlink_containers()
 
     def apply_function(self):
         for container in self.data:
