@@ -217,15 +217,7 @@ class h5squid(Stage):
         for container in self.data:
             container['evt_flux'] = np.zeros(container.size, dtype=FTYPE)
 
-        # don't forget to un-link everything again
-        self.data.unlink_containers()
-
-    def compute_function(self):
-        """
-            Should really only have to be called once! 
-            This evaluates the calculated flux for each event. 
-        """
-        for container in self.data:
+        
             scale_e = container["true_energy"]*(1e9)
             for i in range(container.shape[0]):
                 

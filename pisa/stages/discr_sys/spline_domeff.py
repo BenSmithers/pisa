@@ -60,7 +60,8 @@ class spline_domeff(Stage):
             spline_subset = list(filter(lambda key: use in key, self._spline_names))
             if not len(spline_subset)==1:
                 logging.debug(spline_subset)
-                raise ValueError("Expected to only find one matching spline, found {}".format(len(spline_subset)))
+                logging.warn("Could not find any splines for {}".format(use))
+                continue
 
             self._splinetable[use] = ps.SplineTable(spline_subset[0])
 
@@ -75,7 +76,9 @@ class spline_domeff(Stage):
                 use = "track"
             else:
                 use = "shower"
-            
+            if use not in self._splinetable:
+                logging.fatal("Could not find appropriate splines to weight {}".format(container.name))
+
             container["domeff_cache"] = self._splinetable[use].evaluate_simple((
                 np.log10(container["true_energy"]),
                 container["true_coszen"],

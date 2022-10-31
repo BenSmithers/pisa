@@ -86,13 +86,13 @@ class barr_gradients(Stage):
     def compute_function(self):
         for container in self.data:
             # modify container[flux_key]
-            container["barr_scale"] = ( self.params.conv_norm.value.m_as("dimensionless") *
-                (1+container["weighted_aeff"]*container["barr_grad_WP"]*self.params.barr_grad_WP.value.m_as("dimensionless")) * 
-                (1+container["weighted_aeff"]*container["barr_grad_WM"]*self.params.barr_grad_WM.value.m_as("dimensionless")) *   
-                (1+container["weighted_aeff"]*container["barr_grad_YP"]*self.params.barr_grad_YP.value.m_as("dimensionless")) * 
-                (1+container["weighted_aeff"]*container["barr_grad_YM"]*self.params.barr_grad_YM.value.m_as("dimensionless")) * 
-                (1+container["weighted_aeff"]*container["barr_grad_ZP"]*self.params.barr_grad_ZP.value.m_as("dimensionless")) * 
-                (1+container["weighted_aeff"]*container["barr_grad_ZM"]*self.params.barr_grad_ZM.value.m_as("dimensionless")) 
+            container["barr_scale"] = ( 
+                container["barr_grad_WP"]*self.params.barr_grad_WP.value.m_as("dimensionless") + 
+                container["barr_grad_WM"]*self.params.barr_grad_WM.value.m_as("dimensionless") + 
+                container["barr_grad_YP"]*self.params.barr_grad_YP.value.m_as("dimensionless") +
+                container["barr_grad_YM"]*self.params.barr_grad_YM.value.m_as("dimensionless") +
+                container["barr_grad_ZP"]*self.params.barr_grad_ZP.value.m_as("dimensionless") +
+                container["barr_grad_ZM"]*self.params.barr_grad_ZM.value.m_as("dimensionless") 
                 )
             #container["barr_scale"][container["barr_scale"] < 0.0]=0.0
             
@@ -100,6 +100,8 @@ class barr_gradients(Stage):
 
     def apply_function(self):
         for container in self.data:
-            container["weights"] = container["weights"]*container["barr_scale"] \
+            if container.size==0:
+                continue
+            container["weights"] = self.params.conv_norm.value.m_as("dimensionless")*(container["weights"] + container["barr_scale"]) \
                                     *np.power(container["true_energy"]/PIVOT, self.params.deltagamma.value.m_as("dimensionless"))
             container.mark_changed("weights")

@@ -16,7 +16,7 @@ import photospline
 import numpy as np
 
 
-class airs(Stage):
+class spline_holeice(Stage):
     """
     Parameters
     ----------
@@ -87,4 +87,6 @@ class airs(Stage):
     
     def apply_function(self):
         for container in self.data:
+            if container.size==0:
+                continue
             container["weights"] = container["weights"]*container["hi_value"]
