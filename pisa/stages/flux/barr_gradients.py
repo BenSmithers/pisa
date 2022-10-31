@@ -33,6 +33,7 @@ class barr_gradients(Stage):
         **std_kwargs):
 
         self._gradient_folder = find_resource(grad_folder)
+        self.model_label = "0_0.000000_0.000000_0.000000_0.000000_0.000000_0.000000"
         self._barr_params=[
             "barr_grad_WP",
             "barr_grad_WM",
@@ -58,7 +59,7 @@ class barr_gradients(Stage):
         _suffix = ".hdf5"
         grads = {}
         for param in self._barr_params:
-            dfile = h5.File(os.path.join(self._gradient_folder, param+_suffix),'r')
+            dfile = h5.File(os.path.join(self._gradient_folder, param+self.model_label+_suffix),'r')
             grads[param]= {}
             for key in dfile.keys():
                 grads[param][key] = np.array(dfile[key][:])
@@ -74,17 +75,10 @@ class barr_gradients(Stage):
                 if container.size==0:
                     continue
                 
-                if container["nubar"]<0:
-                    e_effect = RectBivariateSpline( grads[param]["costh_nodes"], grads[param]["energy_nodes"],grads[param]["nuebar"])
-                    mu_effect = RectBivariateSpline( grads[param]["costh_nodes"], grads[param]["energy_nodes"],grads[param]["numubar"])
-                else:
-                    e_effect = RectBivariateSpline( grads[param]["costh_nodes"], grads[param]["energy_nodes"],grads[param]["nue"])
-                    mu_effect = RectBivariateSpline( grads[param]["costh_nodes"], grads[param]["energy_nodes"],grads[param]["numu"])
-                
+                interp = RectBivariateSpline( grads[param]["costh_nodes"], np.log10(grads[param]["energy_nodes"]),grads[param][container.name.split("_")[0]])
+
                 #logging.debug("shape out is {} versus {} expected".format(np.shape(out), container.size))
-                # no tau effect since there are no conventional taus 
-                container[param] = (e_effect(container["true_coszen"], container["true_energy"], grid=False)*container["flux_contribution"][:,0] 
-                                        + mu_effect(container["true_coszen"], container["true_energy"], grid=False)*container["flux_contribution"][:,1])
+                container[param] = interp(container["true_coszen"], np.log10(container["true_energy"]), grid=False)
 
                 container.mark_changed(param)
 

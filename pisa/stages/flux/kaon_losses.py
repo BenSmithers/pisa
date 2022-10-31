@@ -17,6 +17,8 @@ from pisa.utils.resources import find_resource
 
 import numpy as np
 import os
+import h5py as h5
+from scipy.interpolate import interp2d
 
 """
 TODO: make a generic "spline weight stage" that generalizes this and the AIRS spline stage 
@@ -45,8 +47,7 @@ class kaon_losses(Stage):
         kaon_spline,
         **std_kwargs):
 
-        self._kaon_root_name = "kaon_losses_1s_"
-        self._kaon_spline_folder = find_resource(kaon_spline)
+        self.kaon_spline = find_resource(kaon_spline)
 
         expected_params = [
             "kaon_scale",
@@ -86,18 +87,25 @@ class kaon_losses(Stage):
         """
         Pre-compute the 1-sigma shifts 
         """
+
+        kaon_file = h5.File(self.kaon_spline, 'r')
+
         for container in self.data:
             if container["flav"]==2: # no tau!
                 container["kaon_1s_perturb"] = np.zeros(container.size, dtype=FTYPE)
                 continue
 
-            kaon_spline = photospline.SplineTable(self.assemble_name(container["flav"], container["nubar"]))
+            
+            interpolator = interp2d( kaon_file["costh_nodes"], np.log10(kaon_file["energy_nodes"]),  kaon_file[container.name.split("_")[0]] )
 
             container["kaon_1s_perturb"] = np.zeros(container.size, dtype=FTYPE)
 
             if container.size!=0:
-                container["kaon_1s_perturb"] = kaon_spline.evaluate_simple(
-                    (np.log10(container["true_energy"]), container["true_coszen"])
+                container["kaon_1s_perturb"] = interpolator(
+                    np.log10(container["true_energy"]), 
+                    container["true_coszen"],
+                    grid=False
+
                 )
 
             container.mark_changed("kaon_1s_perturb")

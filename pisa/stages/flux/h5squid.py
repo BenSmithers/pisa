@@ -49,14 +49,15 @@ class h5squid(Stage):
             th34:float,
             dmsq:float,
             fluxfile:str,
+            is_nusquids=False,
             convmode=True,
-            separate_flux=True,
             rel_err=None,
             abs_err=None,
             **std_kwargs):
 
         self.fluxfile = find_resource(fluxfile)
         self._convmode = convmode
+        self.is_nusquids = is_nusquids
 
         self.num_neutrinos = 4 
 
@@ -64,7 +65,6 @@ class h5squid(Stage):
         self.theta24 = FTYPE(th24)
         self.theta34 = FTYPE(th34)
         self.dmsq = FTYPE(dmsq) 
-        self.separate_flux = separate_flux
 
         assert self.num_neutrinos<5, "Only up to four neutrinos are supported"
         
@@ -195,23 +195,11 @@ class h5squid(Stage):
         self.energies = np.logspace(log10(min_e), log10(max_e), e_nodes)
         self.zeniths = np.linspace(-1, 1, cth_nodes)
 
-        logging.debug("flux status: {}".format(self.separate_flux))
-        if self.separate_flux:
-            logging.debug("Separate flux!")
-            self.e_atm = self.setup_squid()
-            self.e_atm.Set_initial_state(self.get_initial_state(0), nsq.Basis.flavor)
-            self.e_atm.EvolveState()
-
-            self.mu_atm = self.setup_squid()
-            self.mu_atm.Set_initial_state(self.get_initial_state(1), nsq.Basis.flavor)
-            self.mu_atm.EvolveState()
-
-            if not self._convmode: # no conventional taus...
-                self.tau_atm = self.setup_squid()
-                self.tau_atm.Set_initial_state(self.get_initial_state(2), nsq.Basis.flavor)
-                self.tau_atm.EvolveState()
+        self.squid_atm = self.setup_squid()
+        if self._is_nusquids:
+            self.squid_atm.ReadStateHDF5(self.fluxfile)
         else:
-            self.squid_atm = self.setup_squid()
+            
             self.squid_atm.Set_initial_state(self.get_initial_state(), nsq.Basis.flavor)
             self.squid_atm.EvolveState()
 
@@ -227,7 +215,6 @@ class h5squid(Stage):
 
 
         for container in self.data:
-            container["flux_contribution"] = np.zeros((container.size, 3), dtype=FTYPE)
             container['evt_flux'] = np.zeros(container.size, dtype=FTYPE)
 
         # don't forget to un-link everything again
@@ -243,31 +230,9 @@ class h5squid(Stage):
             for i in range(container.shape[0]):
                 
                 i_nu = 0 if container["nubar"] < 0 else 1
-
-                if self.separate_flux:
-                    container["flux_contribution"][i][0] = self.e_atm.EvalFlavor( container["flav"], container["true_coszen"][i],  scale_e[i], i_nu )
-                    container["flux_contribution"][i][1] = self.mu_atm.EvalFlavor( container["flav"], container["true_coszen"][i],  scale_e[i], i_nu )
-                    if not self._convmode:
-                        container["flux_contribution"][i][2] = self.tau_atm.EvalFlavor( container["flav"], container["true_coszen"][i],  scale_e[i], i_nu )
-
-                    norm = np.sum(container["flux_contribution"][i])
-                    container["evt_flux"] = norm
-
-                    container["flux_contribution"][i][0] /= norm
-                    container["flux_contribution"][i][1] /= norm
-                    if not self._convmode:
-                        container["flux_contribution"][i][2] /= norm
-
-
-                else:
-                    container["flux_contribution"][i][container["flav"]] = 1.0
-                    container["evt_flux"][i] = self.squid_atm.EvalFlavor( container["flav"], container["true_coszen"][i],  scale_e[i], i_nu )
+                container["evt_flux"][i] = self.squid_atm.EvalFlavor( container["flav"], container["true_coszen"][i],  scale_e[i], i_nu )
             
-            container.mark_changed("flux_contribution")
             container.mark_changed("evt_flux")
-
-            if (container.size!=0):
-                logging.debug("Min and max {} and {}".format(np.min(container["flux_contribution"]), np.max(container["flux_contribution"])))
 
     def apply_function(self):
         for container in self.data:
