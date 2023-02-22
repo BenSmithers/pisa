@@ -31,7 +31,7 @@ class spline_holeice(Stage):
 
     def __init__(self, 
             hole_ice_spline, 
-            central_value = 1.0,
+            central_value = -1.0,
             **std_kwargs):
 
         self.hole_ice_spline = find_resource(hole_ice_spline)
@@ -55,6 +55,7 @@ class spline_holeice(Stage):
         self.spline_table = photospline.SplineTable(self.hole_ice_spline)
 
         # consider 'true_coszen" and 'true_energy' containers
+        # NOPE reco values
         for container in self.data:
             container["hi_value"] = np.ones(container.size, dtype=FTYPE)
 
@@ -62,7 +63,7 @@ class spline_holeice(Stage):
                 container["hi_cache"] = np.zeros(container.size, dtype=FTYPE)
             else:
                 container["hi_cache"] = self.spline_table.evaluate_simple(
-                    (np.log10(container["true_energy"]), container["true_coszen"], [self._central_value,])
+                    (np.log10(container["reco_energy"]), container["reco_coszen"], [self._central_value,])
                 )
 
             container.mark_changed("hi_perturbed")
@@ -72,8 +73,8 @@ class spline_holeice(Stage):
             if container.size==0:
                 continue
             rate = self.spline_table.evaluate_simple((
-                    np.log10(container["true_energy"]),
-                    container["true_coszen"],
+                    np.log10(container["reco_energy"]),
+                    container["reco_coszen"],
                     [self.params.hole_ice_scale.value.m_as("dimensionless")]
                 ))
             

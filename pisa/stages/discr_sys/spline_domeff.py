@@ -80,8 +80,8 @@ class spline_domeff(Stage):
                 logging.fatal("Could not find appropriate splines to weight {}".format(container.name))
 
             container["domeff_cache"] = self._splinetable[use].evaluate_simple((
-                np.log10(container["true_energy"]),
-                container["true_coszen"],
+                np.log10(container["reco_energy"]),
+                container["reco_coszen"],
                 [self._central_domeff]
                 ))
 
@@ -100,8 +100,8 @@ class spline_domeff(Stage):
             logging.debug("about to get the rate {}".format(self.params.domeff.value))
         
             rate = self._splinetable[use].evaluate_simple((
-                np.log10(container["true_energy"]),
-                container["true_coszen"],
+                np.log10(container["reco_energy"]),
+                container["reco_coszen"],
                 [self.params.domeff.value.m_as("dimensionless")]
             ))
             logging.debug("pow time")

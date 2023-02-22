@@ -60,7 +60,6 @@ class ice_gradient(Stage):
     def setup_function(self):
         _bin_edges = np.append(self._grad_0[0], [self._grad_0[1][-1], ])
 
-        _bin_edges = np.power(10.0, _bin_edges)
 
         grad_0_vals = np.append([0,], self._grad_0[-1])
         grad_1_vals = np.append([0,], self._grad_1[-1])
@@ -69,8 +68,8 @@ class ice_gradient(Stage):
         grad_1_vals = np.append(grad_1_vals, [0,])
 
         for container in self.data:
-            container["grad0_scales"] = grad_0_vals[np.digitize(container["true_energy"], _bin_edges, right=True) ]
-            container["grad1_scales"] = grad_1_vals[np.digitize(container["true_energy"], _bin_edges, right=True) ]
+            container["grad0_scales"] = grad_0_vals[np.digitize(np.log10(container["reco_energy"]), _bin_edges, right=False) ]
+            container["grad1_scales"] = grad_1_vals[np.digitize(np.log10(container["reco_energy"]), _bin_edges, right=False) ]
 
     def apply_function(self):
         for container in self.data:

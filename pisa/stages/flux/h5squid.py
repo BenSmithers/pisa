@@ -169,21 +169,6 @@ class h5squid(Stage):
             then, we build interpolators for each flavor 
         """
         
-        self._squid_flux = h5.File(self.fluxfile, 'r')
-        
-        energy_nodes = np.array(self._squid_flux["energy_nodes"][:])
-        cos_nodes = np.array(self._squid_flux["costh_nodes"][:])
-
-        self.fluxes = {}
-        for key in self._squid_flux.keys():
-            if key=="energy_nodes" or key=="costh_nodes":
-                continue
-            if self._convmode and "pr" in key: #if we're in conv, skip prompt 
-                continue
-            if (not self._convmode) and "conv" in key: # if we're in pr, skip conv 
-                continue
-            self.fluxes[key] = RectBivariateSpline(cos_nodes, np.log10(energy_nodes), np.array(self._squid_flux[key][:]))
-
         nsq_units = nsq.Const()
 
         min_e = 10*nsq_units.GeV
@@ -195,10 +180,26 @@ class h5squid(Stage):
         self.energies = np.logspace(log10(min_e), log10(max_e), e_nodes)
         self.zeniths = np.linspace(-1, 1, cth_nodes)
 
-        self.squid_atm = self.setup_squid()
-        if self._is_nusquids:
-            self.squid_atm.ReadStateHDF5(self.fluxfile)
+        
+        if self.is_nusquids:
+            self.squid_atm = nsq.nuSQUIDSAtm(self.fluxfile)
         else:
+            self.squid_atm = self.setup_squid()
+            self._squid_flux = h5.File(self.fluxfile, 'r')
+        
+            energy_nodes = np.array(self._squid_flux["energy_nodes"][:])
+            cos_nodes = np.array(self._squid_flux["costh_nodes"][:])
+
+            self.fluxes = {}
+            for key in self._squid_flux.keys():
+                if key=="energy_nodes" or key=="costh_nodes":
+                    continue
+                if self._convmode and "pr" in key: #if we're in conv, skip prompt 
+                    continue
+                if (not self._convmode) and "conv" in key: # if we're in pr, skip conv 
+                    continue
+                self.fluxes[key] = RectBivariateSpline(cos_nodes, np.log10(energy_nodes), np.array(self._squid_flux[key][:]))
+
             
             self.squid_atm.Set_initial_state(self.get_initial_state(), nsq.Basis.flavor)
             self.squid_atm.EvolveState()
