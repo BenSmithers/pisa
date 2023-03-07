@@ -222,7 +222,7 @@ class h5squid(Stage):
             scale_e = container["true_energy"]*(1e9)
             for i in range(container.shape[0]):
                 
-                i_nu = 0 if container["nubar"] < 0 else 1
+                i_nu = 1 if container["nubar"] < 0 else 0
                 container["evt_flux"][i] = self.squid_atm.EvalFlavor( container["flav"], container["true_coszen"][i],  scale_e[i], i_nu )
             
             container.mark_changed("evt_flux")
