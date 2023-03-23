@@ -59,31 +59,6 @@ class kaon_losses(Stage):
             **std_kwargs
         )
 
-    def assemble_name(self, flavor, neutrino)->str:
-        suffix = ""
-        if neutrino==-1:
-            suffix = "antinu"
-        elif neutrino==1:
-            suffix = "nu"
-        else:
-            logging.fatal("What kind of neutrino is {}?".format(neutrino))
-        
-        if flavor==0:
-            suffix+="e"
-        elif flavor==1:
-            suffix+="mu"
-        elif flavor==2:
-            suffix+="tau"
-        else:
-            logging.fatal("Unknown flavor {}".format(flavor))
-
-        full_name = os.path.join(
-            self._kaon_spline_folder,
-            self._kaon_root_name + suffix + ".fits"
-        )
-
-        return full_name
-
     def setup_function(self):
         """
         Pre-compute the 1-sigma shifts 
@@ -92,9 +67,6 @@ class kaon_losses(Stage):
         kaon_file = h5.File(self.kaon_spline, 'r')
 
         for container in self.data:
-            if container["flav"]==2: # no tau!
-                container["kaon_1s_perturb"] = np.zeros(container.size, dtype=FTYPE)
-                continue
             key = ""
             if container["nubar"]<0:
                 key+="antinu"
@@ -121,7 +93,6 @@ class kaon_losses(Stage):
     
     def apply_function(self):
         for container in self.data:
-            container["weights"] *= (1.0 + 
-                container["kaon_1s_perturb"] * self.params.kaon_scale.value.m_as("dimensionless"))
+            container["weights"] += container["kaon_1s_perturb"] * self.params.kaon_scale.value.m_as("dimensionless")
 
             container.mark_changed("weights")
