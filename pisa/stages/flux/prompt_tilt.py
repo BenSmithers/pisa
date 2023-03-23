@@ -12,7 +12,7 @@ from pisa.core.stage import Stage
 from pisa.utils.resources import find_resource
 from pisa.utils.log import logging
 
-PIVOT = FTYPE(100.0e3)
+PIVOT = FTYPE(2020)
 
 class prompt_tilt(Stage):
     def __init__(self,

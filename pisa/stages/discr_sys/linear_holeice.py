@@ -70,20 +70,24 @@ class linear_holeice(Stage):
         for container in self.data:
             # SEE np.digitize
 
-            container["h0_energy_scale"] = self._scales_energy_0[np.digitize(container["true_energy"], self._energy_bins[:-1])]
-            container["h0_czen_scale"] = self._scales_czen_0[np.digitize(container["true_coszen"], self._czen_bins[:-1])]
-            container["h1_energy_scale"] = self._scales_energy_1[np.digitize(container["true_energy"], self._energy_bins[:-1])]
-            container["h1_czen_scale"] = self._scales_czen_1[np.digitize(container["true_coszen"], self._czen_bins[:-1])]
+            container["effect"] = np.zeros(shape=len(container["weights"]))
 
+            container["h0_effect"] = self._scales_energy_0[np.digitize(container["reco_energy"], self._energy_bins)] + self._scales_czen_0[np.digitize(container["reco_coszen"], self._czen_bins)]
+            container["h1_effect"] = self._scales_energy_1[np.digitize(container["reco_energy"], self._energy_bins)] +  self._scales_czen_1[np.digitize(container["reco_coszen"], self._czen_bins)]
+
+    def compute_function(self):
+        for container in self.data:
+            container["effect"] = 1 + self.params.holeice_p0.value.m_as("dimensionless")*container["h0_effect"]
+            container["effect"] *= 1 + self.params.holeice_p1.value.m_as("dimensionless")*container["h1_effect"]
+
+            container["effect"][container["effect"]<0] = 0.0
+
+            container.mark_changed("effect")
 
     def apply_function(self):
 
 
         for container in self.data:
-            container["weights"]*= (1.0+self.params.holeice_p0.value.m_as("dimensionless")*container["h0_energy_scale"])
-            container["weights"]*= (1.0+self.params.holeice_p0.value.m_as("dimensionless")*container["h0_czen_scale"])
-
-            container["weights"]*= (1.0+self.params.holeice_p1.value.m_as("dimensionless")*container["h1_energy_scale"])
-            container["weights"]*= (1.0+self.params.holeice_p1.value.m_as("dimensionless")*container["h1_czen_scale"])
+            container["weights"]*=container["effect"]
 
             container.mark_changed("weights")
