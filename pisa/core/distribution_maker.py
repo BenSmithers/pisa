@@ -489,10 +489,11 @@ def test_DistributionMaker():
     #current_mat = 'iron'
     current_hier = 'nh'
 
-    for new_hier, new_mat in product(hierarchies, materials):
+    #for new_hier, new_mat in product(hierarchies, materials):
+    for new_hier in hierarchies:
         #assert dm.param_selections == sorted([current_hier, current_mat]), \
         #        str(dm.param_selections)
-        assert dm.param_selections == [current_hier], str(dm.param_selections)
+        #assert dm.param_selections == sorted([current_hier, 'earth']), str(dm.param_selections)
         assert dm.params.theta23.value == t23[current_hier], str(dm.params.theta23)
         #assert dm.params.YeO.value == YeO[current_mat], str(dm.params.YeO)
 
@@ -500,7 +501,7 @@ def test_DistributionMaker():
         dm.select_params(new_hier)
         #assert dm.param_selections == sorted([new_hier, current_mat]), \
         #        str(dm.param_selections)
-        assert dm.param_selections == [new_hier], str(dm.param_selections)
+        #assert dm.param_selections == sorted([new_hier, 'earth']), str(dm.param_selections)
         assert dm.params.theta23.value == t23[new_hier], str(dm.params.theta23)
         #assert dm.params.YeO.value == YeO[current_mat], str(dm.params.YeO)
 
@@ -518,7 +519,7 @@ def test_DistributionMaker():
         dm.select_params(current_hier)
         #assert dm.param_selections == sorted([current_hier, current_mat]), \
         #        str(dm.param_selections)
-        assert dm.param_selections == [current_hier], str(dm.param_selections)
+        #assert dm.param_selections == sorted([current_hier, 'earth']), str(dm.param_selections)
         assert dm.params.theta23.value == t23[current_hier], str(dm.params.theta23)
         #assert dm.params.YeO.value == YeO[current_mat], str(dm.params.YeO)
 

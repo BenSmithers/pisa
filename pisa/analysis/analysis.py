@@ -30,7 +30,7 @@ from pisa.utils.comparisons import recursiveEquality, FTYPE_PREC, ALLCLOSE_KW
 from pisa.utils.log import logging, set_verbosity
 from pisa.utils.fileio import to_file
 from pisa.utils.stats import (METRICS_TO_MAXIMIZE, METRICS_TO_MINIMIZE,
-                              LLH_METRICS, CHI2_METRICS,
+                              LLH_METRICS, CHI2_METRICS, weighted_chi2,
                               it_got_better, is_metric_to_maximize)
 
 __all__ = ['MINIMIZERS_USING_SYMM_GRAD', 'MINIMIZERS_USING_CONSTRAINTS',
@@ -249,6 +249,7 @@ def validate_minimizer_settings(minimizer_settings):
             logging.warning('starting step-size is very low, convergence will be slow')
 
 
+
 def get_separate_octant_params(
     hypo_maker, angle_name, inflection_point, tolerance=None
 ):
@@ -364,6 +365,28 @@ def update_param_values(
             if update_is_fixed:
                 pipeline.params[p.name].is_fixed = p.is_fixed
 
+def update_param_values_detector(
+    hypo_maker,
+    params,
+    update_nominal_values=False,
+    update_range=False,
+    update_is_fixed=False
+):
+    """
+    Modification of the update_param_values function to use with the Detectors class.
+    """
+    for distribution_maker in hypo_maker:
+        update_param_values(distribution_maker, params)
+
+    if isinstance(params, Param): params = ParamSet(params) # just for the following
+
+    for p in params.names: # now update params with det_names inside
+        for i, det_name in enumerate(hypo_maker.det_names):
+            if det_name in p:
+                cp = deepcopy(params[p])
+                cp.name = cp.name.replace('_'+det_name, "")
+                update_param_values(hypo_maker._distribution_makers[i], cp)
+
 # TODO: move this to a central location prob. in utils
 class Counter(object):
     """Simple counter object for use as a minimizer callback."""
@@ -416,8 +439,9 @@ class BoundedRandomDisplacement(object):
 class HypoFitResult(object):
     """Holds all relevant information about a fit result."""
 
-    _state_attrs = ["metric", "metric_val", "params", "hypo_asimov_dist",
-                    "detailed_metric_info", "minimizer_time",
+    
+    _state_attrs = ["metric", "metric_val", "params", "param_selections", 
+                    "hypo_asimov_dist", "detailed_metric_info", "minimizer_time",
                     "num_distributions_generated", "minimizer_metadata", "fit_history"]
 
     # TODO: initialize from serialized state
@@ -442,6 +466,7 @@ class HypoFitResult(object):
         self.hypo_asimov_dist = None
         if hypo_maker is not None:
             self.params = hypo_maker.params
+            self.param_selections = hypo_maker.param_selections
             # Record the distribution with the optimal param values
             self.hypo_asimov_dist = hypo_maker.get_outputs(return_sum=True)
         self.detailed_metric_info = None
@@ -462,7 +487,7 @@ class HypoFitResult(object):
                 self.detailed_metric_info = [self.get_detailed_metric_info(
                     data_dist=data_dist[i], hypo_asimov_dist=self.hypo_asimov_dist[i],
                     params=hypo_maker.distribution_makers[i].params, metric=metric[i],
-                    other_metrics=other_metrics, detector_name=hypo_maker.det_names[i]
+                    other_metrics=other_metrics, detector_name=hypo_maker.det_names[i], hypo_maker=hypo_maker
                 ) for i in range(len(data_dist))]
             else: # DistributionMaker object
                 if 'generalized_poisson_llh' == metric[0]:
@@ -474,7 +499,7 @@ class HypoFitResult(object):
                 self.detailed_metric_info = self.get_detailed_metric_info(
                     data_dist=data_dist, hypo_asimov_dist=self.hypo_asimov_dist, generalized_poisson_hypo=generalized_poisson_dist,
                     params=hypo_maker.params, metric=metric[0], other_metrics=other_metrics,
-                    detector_name=hypo_maker.detector_name
+                    detector_name=hypo_maker.detector_name, hypo_maker=hypo_maker
                 )
 
     def __getitem__(self, i):
@@ -576,8 +601,8 @@ class HypoFitResult(object):
         return new_obj
 
     @staticmethod
-    def get_detailed_metric_info(data_dist, hypo_asimov_dist, params, metric,generalized_poisson_hypo=None,
-                                 other_metrics=None, detector_name=None):
+    def get_detailed_metric_info(data_dist, hypo_maker, hypo_asimov_dist, params, metric,
+                                 generalized_poisson_hypo=None, other_metrics=None, detector_name=None):
         """Get detailed fit information, including e.g. maps that yielded the
         metric.
 
@@ -619,15 +644,25 @@ class HypoFitResult(object):
                 detailed_metric_info[m] = name_vals_d
 
             else:
-                if isinstance(hypo_asimov_dist,OrderedDict):
+                if isinstance(hypo_asimov_dist, OrderedDict):
                     hypo_asimov_dist = hypo_asimov_dist['weights']
 
-                name_vals_d['maps'] = data_dist.metric_per_map(
-                    expected_values=hypo_asimov_dist, metric=m
-                )
-                metric_hists = data_dist.metric_per_map(
-                    expected_values=hypo_asimov_dist, metric='binned_'+m
-                )
+                if m == 'weighted_chi2':
+                    actual_values = data_dist.hist['total']
+                    expected_values = hypo_asimov_dist.hist['total']
+                    d = {'output_binning': hypo_maker.pipelines[0].output_binning,
+                         'output_key': 'bin_unc2'}
+                    bin_unc2 = hypo_maker.get_outputs(return_sum=True, **d).hist['total']
+                    metric_hists = weighted_chi2(actual_values, expected_values, bin_unc2)
+                    name_vals_d['maps'] = OrderedDict(total=np.sum(metric_hists))
+                    metric_hists = OrderedDict(total=metric_hists)
+                else:
+                    name_vals_d['maps'] = data_dist.metric_per_map(
+                        expected_values=hypo_asimov_dist, metric=m
+                    )
+                    metric_hists = data_dist.metric_per_map(
+                        expected_values=hypo_asimov_dist, metric='binned_'+m
+                    )
 
                 maps_binned = []
                 for asimov_map, metric_hist in zip(hypo_asimov_dist, metric_hists):
@@ -974,11 +1009,25 @@ class BasicAnalysis(object):
         # (which will also be the initial values in the fit) and blah...
         # If this is the case, don't both to fit and return results right away.
 
+        if isinstance(metric, str):
+            metric = [metric]
+
         # Grab the hypo map
         hypo_asimov_dist = hypo_maker.get_outputs(return_sum=True)
 
+        if isinstance(metric, str):
+            metric = [metric]
+        # Check number of used metrics
+        if hypo_maker.__class__.__name__ == "Detectors":
+            if len(metric) == 1: # One metric for all detectors
+                metric = list(metric) * len(hypo_maker.distribution_makers)
+            elif len(metric) != len(hypo_maker.distribution_makers):
+                raise IndexError('Number of defined metrics does not match with number of detectors.')
+        else: # DistributionMaker object
+            assert len(metric) == 1
+
         # Check if the hypo matches data
-        if data_dist.allclose(hypo_asimov_dist) :
+        if hypo_maker.__class__.__name__ != "Detectors" and data_dist.allclose(hypo_asimov_dist) :
 
             msg = 'Initial hypo matches data, no need for fit'
             logging.info(msg)
@@ -1084,6 +1133,7 @@ class BasicAnalysis(object):
 
         if not self.blindness:
             logging.info(f"found best fit at angle {new_fit_info.params[angle_name].value}")
+
 
         # We must not forget to reset the range of the angle to its original value!
         # Otherwise, the parameter returned by this function will have a different
@@ -1685,6 +1735,42 @@ class BasicAnalysis(object):
 
         # reset number of iterations before each minimization
         self._nit = 0
+
+
+        # Before starting minimization, check if we already have a perfect match between data and template
+        # This can happen if using pseudodata that was generated with the nominal values for parameters
+        # (which will also be the initial values in the fit) and blah...
+        # If this is the case, don't both to fit and return results right away. 
+
+        # Grab the hypo map
+        hypo_asimov_dist = hypo_maker.get_outputs(return_sum=True)
+        
+        # Check if the hypo matches data
+        if data_dist.allclose(hypo_asimov_dist) :
+
+            msg = 'Initial hypo matches data, no need for fit'
+            logging.info(msg)
+
+            # Get the metric value at this initial point (for the returned data)
+            initial_metric_val = (
+                data_dist.metric_total(expected_values=hypo_asimov_dist, metric=metric[0])
+                + hypo_maker.params.priors_penalty(metric=metric[0])
+            )
+
+            # Return fit results, even though didn't technically fit
+            return HypoFitResult(
+                metric,
+                initial_metric_val,
+                data_dist,
+                hypo_maker,
+                minimizer_time=0.,
+                minimizer_metadata={"success":True, "nit":0, "message":msg}, # Add some metadata in the format returned by `scipy.optimize.minimize`
+                fit_history=None,
+                other_metrics=None,
+                num_distributions_generated=0,
+                include_detailed_metric_info=True,
+            )
+
 
         #
         # From that point on, optimize starts using the metric and
@@ -2456,6 +2542,7 @@ class BasicAnalysis(object):
         #
         try:
             if hypo_maker.__class__.__name__ == "Detectors":
+                update_param_values_detector(hypo_maker, hypo_maker.params) #updates values for ALL detectors
                 metric_val = 0
                 for i in range(len(hypo_maker.distribution_makers)):
                     data = data_dist[i].metric_total(expected_values=hypo_asimov_dist[i],
@@ -2464,11 +2551,22 @@ class BasicAnalysis(object):
                 priors = hypo_maker.params.priors_penalty(metric=metric[0]) # uses just the "first" metric for prior
                 metric_val += priors
             else: # DistributionMaker object
-                metric_val = (
-                    data_dist.metric_total(expected_values=hypo_asimov_dist,
-                                               metric=metric[0], metric_kwargs=metric_kwargs)
-                        + hypo_maker.params.priors_penalty(metric=metric[0])
-                    )
+                if metric[0] == 'weighted_chi2':
+                    actual_values = data_dist.hist['total']
+                    expected_values = hypo_asimov_dist.hist['total']
+                    d = {'output_binning': hypo_maker.pipelines[0].output_binning,
+                         'output_key': 'bin_unc2'}
+                    bin_unc2 = hypo_maker.get_outputs(return_sum=True, **d).hist['total']
+                    metric_val = (
+                        np.sum(weighted_chi2(actual_values, expected_values, bin_unc2))
+                            + hypo_maker.params.priors_penalty(metric=metric[0])
+                        )
+                else:
+                    metric_val = (
+                        data_dist.metric_total(expected_values=hypo_asimov_dist,
+                                                   metric=metric[0], metric_kwargs=metric_kwargs)
+                            + hypo_maker.params.priors_penalty(metric=metric[0])
+                        )
         except Exception as e:
             if self.blindness:
                 logging.error('Minimizer failed')
@@ -2795,7 +2893,7 @@ class Analysis(BasicAnalysis):
         else:
             fit_info.metric_val = deepcopy(hypo_maker.params)
         if hypo_maker.__class__.__name__ == "Detectors":
-            fit_info.detailed_metric_info = [self.get_detailed_metric_info(
+            fit_info.detailed_metric_info = [fit_info.get_detailed_metric_info(
                 data_dist=data_dist[i], hypo_asimov_dist=hypo_asimov_dist[i],
                 params=hypo_maker.distribution_makers[i].params, metric=metric[i],
                 other_metrics=other_metrics, detector_name=hypo_maker.det_names[i]
@@ -2808,7 +2906,7 @@ class Analysis(BasicAnalysis):
             else:
                 generalized_poisson_dist = None
 
-            fit_info.detailed_metric_info = self.get_detailed_metric_info(
+            fit_info.detailed_metric_info = fit_info.get_detailed_metric_info(
                 data_dist=data_dist, hypo_asimov_dist=hypo_asimov_dist, generalized_poisson_hypo=generalized_poisson_dist,
                 params=hypo_maker.params, metric=metric[0], other_metrics=other_metrics,
                 detector_name=hypo_maker.detector_name
