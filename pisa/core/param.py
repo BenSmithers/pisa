@@ -639,6 +639,7 @@ class DerivedParam(Param):
             help=''):
 
         self._depends_names = depends_names
+
         self._dependson = tuple([])
         self._configured = False
         self._callable = None
@@ -663,6 +664,7 @@ class DerivedParam(Param):
 
         if function_file!="":
             self.callable = Funct.from_json(find_resource(function_file))
+
     
     @property
     def callable(self)->callable.Funct:
