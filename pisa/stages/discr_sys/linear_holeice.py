@@ -1,12 +1,17 @@
 import numpy as np
 import h5py as h5 
 
+from math import log10
+
+from scipy.stats import binned_statistic_2d
+
 from pisa import FTYPE, TARGET
 from pisa.core.stage import Stage
 from pisa.core.binning import MultiDimBinning
 from pisa.utils.log import logging
 from pisa.utils.resources import find_resource
 
+from scipy.interpolate import RectBivariateSpline
 """
 We need to do two things! 
 
@@ -39,17 +44,20 @@ class linear_holeice(Stage):
             **std_kwargs
         )
 
+
     
     def load_scales(self)->bool:
         data = h5.File(self.scales_files,'r')
 
-        self._energy_bins = np.array(data["energy_bins"][:])
-        self._czen_bins = np.array(data["coszen_bins"][:])
+        self._energy_bins = np.array(data["energy_bins"])
+        loge = np.log10(self._energy_bins)
+        e_c = 0.5*(loge[:-1] + loge[1:])
 
-        self._scales_energy_0 = np.array(data["holeice_0_energy"][:])
-        self._scales_czen_0 = np.array(data["holeice_0_coszen"][:])
-        self._scales_energy_1 = np.array(data["holeice_1_energy"][:])
-        self._scales_czen_1 = np.array(data["holeice_1_coszen"][:])
+        self._czen_bins = np.array(data["coszen_bins"][:])
+        c_c = 0.5*(self._czen_bins[:-1] + self._czen_bins[1:])
+
+        self._scales_0 = RectBivariateSpline(c_c, e_c,np.array(data["holeice_0"][:]))
+        self._scales_1 = RectBivariateSpline(c_c, e_c,np.array(data["holeice_1"][:]))
 
         data.close()
 
@@ -59,24 +67,32 @@ class linear_holeice(Stage):
         """
             Figure out in which bin all the events belong, assign the scaling parameter
         """
+
+        
         logging.debug("setting up linear hole ice stage")
         self.load_scales()
 
-        success = self.load_scales()
-        if not success:
-            raise RuntimeError("Failed to load scales file")
-
-
         for container in self.data:
             # SEE np.digitize
+            
+            container["effect"] = np.ones(shape=len(container["weights"]))
 
-            container["effect"] = np.zeros(shape=len(container["weights"]))
+            if len(container["effect"])==0:
+                
+                continue
 
-            container["h0_effect"] = self._scales_energy_0[np.digitize(container["reco_energy"], self._energy_bins)] + self._scales_czen_0[np.digitize(container["reco_coszen"], self._czen_bins)]
-            container["h1_effect"] = self._scales_energy_1[np.digitize(container["reco_energy"], self._energy_bins)] +  self._scales_czen_1[np.digitize(container["reco_coszen"], self._czen_bins)]
+
+            container["h0_effect"] = self._scales_0(container["reco_coszen"], np.log10(container["reco_energy"]), grid=False)
+            container["h1_effect"] = self._scales_1(container["reco_coszen"], np.log10(container["reco_energy"]), grid=False)
+
+
+            #container["h0_effect"] = self._scales_energy_0[np.digitize(container["reco_energy"], self._energy_bins)] + self._scales_czen_0[np.digitize(container["reco_coszen"], self._czen_bins)]
+            #container["h1_effect"] = self._scales_energy_1[np.digitize(container["reco_energy"], self._energy_bins)] +  self._scales_czen_1[np.digitize(container["reco_coszen"], self._czen_bins)]
 
     def compute_function(self):
         for container in self.data:
+            if len(container["effect"]) == 0:
+                continue
             container["effect"] = 1 + self.params.holeice_p0.value.m_as("dimensionless")*container["h0_effect"]
             container["effect"] *= 1 + self.params.holeice_p1.value.m_as("dimensionless")*container["h1_effect"]
 

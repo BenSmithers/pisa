@@ -50,7 +50,7 @@ class astrophysical(Stage):
             abs_err=None,
             **std_kwargs):
 
-        self.num_neutrinos = 4 #flavors 
+        self.num_neutrinos = 3 #flavors 
 
         self._central_gamma = FTYPE(-2.5)
         self._central_norm = FTYPE(1.0e-18)
@@ -75,7 +75,7 @@ class astrophysical(Stage):
         The initial state should be a power-law flux with the relevant flavor ratios! 
         """
         flavors = self.num_neutrinos 
-        neutrinos = 2
+        neutrinos = 2 #nu/nubar
         inistate = np.zeros(shape=(flavors, neutrinos,len(self.zeniths),  len(self.energies) ))
 
         for i_flav in range(flavors):
@@ -145,10 +145,10 @@ class astrophysical(Stage):
             scale_e = container["true_energy"]*(1e9)
 
             for i_evt in range(container.size):
-                i_nu = 0 if container["nubar"] < 0 else 1
+                i_nu = 1 if container["nubar"] < 0 else 0
                 container["astro_flux_nominal"][i_evt] = self.squid_atm.EvalFlavor( container["flav"], container["true_coszen"][i_evt],  scale_e[i_evt], i_nu )
 
-            container["astro_flux_nominal"]= np.abs(container["astro_flux_nominal"])
+            container["astro_flux_nominal"][container["astro_flux_nominal"] < 0] = 0.0 
             # TODO split this up so that we can use flavor ratios
             # nu_flux_nominal[:,0] = _precalc*self._e_ratio
             # nu_flux_nominal[:,1] = _precalc*self._mu_ratio

@@ -1,11 +1,6 @@
 """
 This stage modifies weights according to the ice gradients it is provided
 """
-
-
-"""
-stage to implement getting the contribution to fluxes from astrophysical neutrino sources
-"""
 import numpy as np
 from math import log10
 
