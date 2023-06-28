@@ -32,6 +32,10 @@ class ice_gradient_full(correlated_stage):
 
         correlated_stage.__init__(self, correlation, **std_kwargs)
 
+    @property
+    def name_root(self):
+        return "ice"
+
     def setup_function(self):
         """
            aaaaah

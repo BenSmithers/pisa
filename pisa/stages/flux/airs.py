@@ -89,5 +89,3 @@ class airs(Stage):
         for container in self.data:
             container["weights"] += container["airs_1s_perturb"] * self.params.airs_scale.value.m_as("dimensionless")
             container["weights"][container["weights"]<0] = 0.0
-
-            container.mark_changed("weights")

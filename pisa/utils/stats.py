@@ -6,7 +6,7 @@ Statistical functions
 from __future__ import absolute_import, division
 
 import numpy as np
-from scipy.special import gammaln
+from scipy.special import gammaln, loggamma
 from uncertainties import unumpy as unp
 
 from pisa import FTYPE
@@ -223,7 +223,7 @@ def llh(actual_values, expected_values):
     # (uses Stirling's approximation to estimate ln(k!) ~ kln(k)-k)
     #
     llh_val = actual_values*np.log(expected_values) - expected_values
-    llh_val -= actual_values*np.log(actual_values) - actual_values
+    llh_val -= loggamma(actual_values + 1)
 
     return llh_val
 

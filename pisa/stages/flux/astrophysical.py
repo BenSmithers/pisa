@@ -20,6 +20,8 @@ try:
 except ImportError:
     import nuSQuIDS as nsq
 
+from pisa.utils.correlated_param_stage import correlated_stage
+
 
 PIVOT = FTYPE(1.0e5)
 
@@ -43,11 +45,10 @@ class astrophysical(Stage):
     """
 
     def __init__(self, 
+    
             e_ratio = 1.0,
             mu_ratio = 1.0,
             tau_ratio = 1.0,
-            rel_err=None,
-            abs_err=None,
             **std_kwargs):
 
         self.num_neutrinos = 3 #flavors 
@@ -59,8 +60,8 @@ class astrophysical(Stage):
         self._mu_ratio = FTYPE(mu_ratio)
         self._tau_ratio = FTYPE(tau_ratio)
 
-        self.rel_err = rel_err.m_as("dimensionless") if rel_err is not None else 1.0e-6
-        self.abs_err = abs_err.m_as("dimensionless") if abs_err is not None else 1.0e-6
+        self.rel_err =  1.0e-6
+        self.abs_err =  1.0e-6
         self.concurrent_threads = PISA_NUM_THREADS if TARGET == "parallel" else 1
 
         expected_params = ("astro_delta", "astro_norm")
@@ -148,18 +149,19 @@ class astrophysical(Stage):
                 i_nu = 1 if container["nubar"] < 0 else 0
                 container["astro_flux_nominal"][i_evt] = self.squid_atm.EvalFlavor( container["flav"], container["true_coszen"][i_evt],  scale_e[i_evt], i_nu )
 
+
+            container.mark_changed("astro_flux_nominal")
             container["astro_flux_nominal"][container["astro_flux_nominal"] < 0] = 0.0 
             # TODO split this up so that we can use flavor ratios
             # nu_flux_nominal[:,0] = _precalc*self._e_ratio
             # nu_flux_nominal[:,1] = _precalc*self._mu_ratio
             # nu_flux_nominal[:,2] = _precalc*self._tau_ratio
 
-            container.mark_changed("astro_flux_nominal")
-
-
-    @profile
-    def apply_function(self):
+    def compute_function(self):
         for container in self.data:
+            if container.size==0:
+                continue
+
             if container["flav"]==0:
                 scale = self._e_ratio
             elif container["flav"]==1:
@@ -170,12 +172,18 @@ class astrophysical(Stage):
                 logging.warn(container.name)
                 logging.fatal("Unknown flavor {}".format(container["flav"]))
 
+            container["astro_effect"] =  scale \
+                * self.params.astro_norm.value.m_as("dimensionless") \
+                * np.power(container["true_energy"]/PIVOT, self.params.astro_delta.value.m_as("dimensionless"))
+            container["astro_effect"][container["astro_effect"]<0]=0.0
+
+    @profile
+    def apply_function(self):
+        for container in self.data:
             if container.size==0:
                 continue
 
 
-            container["weights"] = container["weights"] * container["astro_flux_nominal"] * scale \
-                * self.params.astro_norm.value.m_as("dimensionless") \
-                * np.power(container["true_energy"]/PIVOT, self.params.astro_delta.value.m_as("dimensionless"))
+            container["weights"] = container["weights"] * container["astro_flux_nominal"] * container["astro_effect"]
 
-            container.mark_changed("weights")
+PIVOT = FTYPE(1.0e5)

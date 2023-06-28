@@ -71,4 +71,4 @@ class ice_gradient(Stage):
             container["weights"] *= 1 + self.params.ice_grad_0.value.m_as("dimensionless")*container["grad0_scales"] 
             container["weights"] *= 1 + self.params.ice_grad_1.value.m_as("dimensionless")*container["grad1_scales"] 
 
-            container.mark_changed("weights")
+            container["weights"][container["weights"]<0] = 0.0

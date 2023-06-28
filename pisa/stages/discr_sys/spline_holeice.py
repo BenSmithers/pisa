@@ -54,8 +54,7 @@ class spline_holeice(Stage):
 
         self.spline_table = photospline.SplineTable(self.hole_ice_spline)
 
-        # consider 'true_coszen" and 'true_energy' containers
-        # NOPE reco values
+        # consider 'reco_coszen" and 'reco_energy' containers
         for container in self.data:
             container["hi_value"] = np.ones(container.size, dtype=FTYPE)
 
@@ -83,8 +82,6 @@ class spline_holeice(Stage):
             scales[mask] = 0.0
             container["hi_value"] = scales
             
-            container.mark_changed("hi_value")
-
     
     def apply_function(self):
         for container in self.data:

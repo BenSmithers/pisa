@@ -105,5 +105,3 @@ class linear_holeice(Stage):
 
         for container in self.data:
             container["weights"]*=container["effect"]
-
-            container.mark_changed("weights")

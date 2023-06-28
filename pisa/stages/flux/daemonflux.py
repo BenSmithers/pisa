@@ -13,13 +13,17 @@ this would get around the need to have all of these pre-propagated fluxes
 from pisa import FTYPE 
 from pisa.core.stage import Stage
 from pisa.utils.resources import find_resource
+from pisa.utils.correlated_param_stage import correlated_stage
+
 
 import os 
 import h5py as h5
 from scipy.interpolate import RectBivariateSpline
 import numpy as np
 
-class daemonflux(Stage):
+
+
+class daemonflux(correlated_stage):
     """
     This implementation relies on you having already prepared several things.
     
@@ -41,15 +45,15 @@ class daemonflux(Stage):
         gradient_folder:str,
         file_template:str,
         prompt:bool,
+        correlation_file:str,
         **std_kwargs):
 
         self.gradient_folder = find_resource(gradient_folder)
         self.file_template = file_template
+        self._cor_file = find_resource(correlation_file)
 
         self._gradients = {}
         self.prompt = bool(prompt)
-        print("Daemon!")
-        print(self.prompt, prompt)
 
         self.daemon_params = [
             'le_Kplus' ,
@@ -78,14 +82,20 @@ class daemonflux(Stage):
             'GSF_6'
             ]
 
-        super().__init__(
-            expected_params=self.daemon_params,
-            **std_kwargs
-        )
+        correlated_stage.__init__(self, 
+                        correlation_file, 
+                        as_gradients=True,
+                        **std_kwargs)
+        self._as_gradients = True
+
+    @property
+    def name_root(self):
+        return "daemon"
 
     def setup_function(self):
         self.data.representation = self.calc_mode
 
+        self._per_event_effects = []
 
         # first we load in the datafiles and store them in a local namespace 
         gradients = {}
@@ -107,9 +117,12 @@ class daemonflux(Stage):
 
         # now we prepare each gradient for each container 
         for container in self.data:
-            container["daemon_effect"] = np.zeros(container.size)
+            if container.size==0:
+                continue
+
+            per_event_effect = []
             for param in self.daemon_params:
-            
+                
                 container[param] = np.zeros(container.size)
 
                 if container.size==0:
@@ -130,26 +143,6 @@ class daemonflux(Stage):
 
                             
                 interp = RectBivariateSpline( gradients[param]["costh_nodes"], np.log10(gradients[param]["energy_nodes"]),gradients[param]["conv_"+key])
-                container[param] = interp(container["true_coszen"], np.log10(container["true_energy"]), grid=False)
+                per_event_effect.append(interp(container["true_coszen"], np.log10(container["true_energy"]), grid=False))
+            self._per_event_effects.append(np.array(per_event_effect))
         
-        # each container now has a [daemon_parma] entry that specifies its gradient 
-
-    def compute_function(self):
-        """
-        Calculate the net effect of perturbing all the parameters by however much... 
-        """
-        for container in self.data:
-            container["daemon_effect"] = np.zeros(container.size)
-
-            for param in self.daemon_params:
-                if False: # self.prompt and ("GSF" not in param):
-                    continue
-                    
-                # we divide by the weighted aeff so the gradient is against the "initial weight" of 1.0, which we then scale back up by the container['weighted_aeff'] when we apply the aeff stage
-                container["daemon_effect"] += self.params[param].value.m_as("dimensionless")*container[param]
-
-            container.mark_changed("daemon_effect")
-
-    def apply_function(self):
-        for container in self.data:
-            container["weights"] += container["daemon_effect"]

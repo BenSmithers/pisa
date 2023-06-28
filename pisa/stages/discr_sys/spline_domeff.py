@@ -53,14 +53,16 @@ class spline_domeff(Stage):
         """
         Load in the DOMEff splines, fill in the cache 
         """
-        logging.debug("setting up spline_domeeff stage")
+        logging.debug("setting up spline_domeff stage")
         # this should link all the containers, if it doesn't, make a scene 
 
         for use in ["track", "shower"]:
             spline_subset = list(filter(lambda key: use in key, self._spline_names))
-            if not len(spline_subset)==1:
-                logging.debug(spline_subset)
-                logging.warn("Could not find any splines for {}".format(use))
+            if not len(spline_subset)==0:
+                logging.warn("Did not find any splines matching {} for {} in {}".format(self._matching, use, self._spline_folder))
+                continue
+            elif not len(spline_subset)==1:
+                logging.warn("Did not find exacly one spline matching {} for {} in {}".format(self._matching, use, self._spline_folder))
                 continue
 
             self._splinetable[use] = ps.SplineTable(spline_subset[0])
@@ -76,7 +78,8 @@ class spline_domeff(Stage):
                 use = "track"
             else:
                 use = "shower"
-            if use not in self._splinetable:
+            if use not in self._splinetable.keys():
+                logging.warn("{}".format(use))
                 logging.fatal("Could not find appropriate splines to weight {}".format(container.name))
 
             container["domeff_cache"] = self._splinetable[use].evaluate_simple((
@@ -104,7 +107,6 @@ class spline_domeff(Stage):
                 container["reco_coszen"],
                 [self.params.domeff.value.m_as("dimensionless")]
             ))
-            logging.debug("pow time")
             scales = np.power(10.0, rate - container["domeff_cache"] )
             mask = scales < 0.0
             scales[mask] = 0.0
@@ -118,4 +120,4 @@ class spline_domeff(Stage):
         for container in self.data:
             container["weights"] = container["weights"]*container["domeff_splines"]
 
-            container.mark_changed("weights")
+            container["weights"][container["weights"]< 0] = 0.0

@@ -95,4 +95,4 @@ class kaon_losses(Stage):
         for container in self.data:
             container["weights"] += container["kaon_1s_perturb"] * self.params.kaon_scale.value.m_as("dimensionless")
 
-            container.mark_changed("weights")
+            container["weights"][container["weights"]<0] = 0.0
