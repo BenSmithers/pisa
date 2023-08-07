@@ -58,7 +58,7 @@ class spline_domeff(Stage):
 
         for use in ["track", "shower"]:
             spline_subset = list(filter(lambda key: use in key, self._spline_names))
-            if not len(spline_subset)==0:
+            if len(spline_subset)==0:
                 logging.warn("Did not find any splines matching {} for {} in {}".format(self._matching, use, self._spline_folder))
                 continue
             elif not len(spline_subset)==1:
@@ -70,6 +70,7 @@ class spline_domeff(Stage):
 
         for container in self.data:
             container["domeff_splines"] = np.ones(container.size)
+            container["domeff_cache"] = np.ones(container.size)
 
             if container.size==0:
                 continue
@@ -77,44 +78,55 @@ class spline_domeff(Stage):
             if container.name in ["numu_cc", "numubar_cc"]:
                 use = "track"
             else:
-                use = "shower"
-            if use not in self._splinetable.keys():
-                logging.warn("{}".format(use))
-                logging.fatal("Could not find appropriate splines to weight {}".format(container.name))
+                use = "shower"     
 
-            container["domeff_cache"] = self._splinetable[use].evaluate_simple((
-                np.log10(container["reco_energy"]),
-                container["reco_coszen"],
-                [self._central_domeff]
-                ))
+            casc_mask = container["pid"]==0
+            track_mask = np.logical_not(casc_mask)       
+
+            if len(container["reco_energy"][casc_mask])!=0:
+                container["domeff_cache"][casc_mask] = self._splinetable["shower"].evaluate_simple((
+                    np.log10(container["reco_energy"][casc_mask]),
+                    container["reco_coszen"][casc_mask],
+                    [self._central_domeff]
+                    ))
+            if len(container["reco_energy"][track_mask])!=0:
+                container["domeff_cache"][track_mask] = self._splinetable["track"].evaluate_simple((
+                    np.log10(container["reco_energy"][track_mask]),
+                    container["reco_coszen"][track_mask],
+                    [self._central_domeff]
+                    ))
 
     @profile
     def compute_function(self):
 
 
         for container in self.data:
-            if container.name in ["numu_cc", "numubar_cc"]:
-                use = "track"
-            else:
-                use = "shower"
-
             if container.size==0:
                 continue
-            logging.debug("about to get the rate {}".format(self.params.domeff.value))
-        
-            rate = self._splinetable[use].evaluate_simple((
-                np.log10(container["reco_energy"]),
-                container["reco_coszen"],
-                [self.params.domeff.value.m_as("dimensionless")]
-            ))
-            scales = np.power(10.0, rate - container["domeff_cache"] )
-            mask = scales < 0.0
-            scales[mask] = 0.0
 
-            container["domeff_splines"] = scales
-            container.mark_changed("domeff_splines")
+            casc_mask = container["pid"]==0
+            track_mask = np.logical_not(casc_mask)
 
-            logging.debug("reweight pisa")
+            if len(container["reco_energy"][casc_mask])!=0:
+                casc_rate = self._splinetable["shower"].evaluate_simple((
+                    np.log10(container["reco_energy"][casc_mask]),
+                    container["reco_coszen"][casc_mask],
+                    [self.params.domeff.value.m_as("dimensionless")]
+                ))
+                scales = np.power(10.0, casc_rate - container["domeff_cache"] )
+                container["domeff_splines"][casc_mask] = scales
+
+            if len(container["reco_energy"][track_mask])!=0:
+                track_rate = self._splinetable["track"].evaluate_simple((
+                    np.log10(container["reco_energy"][track_mask]),
+                    container["reco_coszen"][track_mask],
+                    [self.params.domeff.value.m_as("dimensionless")]
+                ))
+
+                scales = np.power(10.0, track_rate - container["domeff_cache"] )
+                container["domeff_splines"][track_mask] = scales
+
+
     
     def apply_function(self):
         for container in self.data:
