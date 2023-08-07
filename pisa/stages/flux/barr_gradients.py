@@ -30,17 +30,18 @@ class barr_gradients(Stage):
     def __init__(
         self,
         grad_folder:str,
+        file_template:str,
         **std_kwargs):
 
         self._gradient_folder = find_resource(grad_folder)
-        self.model_label = "0_0.000000_0.000000_0.000000_0.000000_0.000000_0.000000"
+        self.file_template = file_template
         self._barr_params=[
-            "barr_grad_WP",
-            "barr_grad_WM",
-            "barr_grad_YP",
-            "barr_grad_YM",
-            "barr_grad_ZP",
-            "barr_grad_ZM"
+            "WP",
+            "WM",
+            "YP",
+            "YM",
+            "ZP",
+            "ZM"
         ]
 
         expected_params = self._barr_params + ["deltagamma", "conv_norm"]
@@ -58,24 +59,29 @@ class barr_gradients(Stage):
         logging.debug("Setting up barr gradient weighter stage")
         _suffix = ".hdf5"
         grads = {}
+
         for param in self._barr_params:
-            dfile = h5.File(os.path.join(self._gradient_folder,param.split("_")[-1], param+"_"+self.model_label+_suffix),'r')
+            filename = os.path.join(
+                self._gradient_folder,
+                self.file_template.format(param)
+            ) 
+
+            dfile = h5.File(filename, 'r')
             grads[param]= {}
             for key in dfile.keys():
                 grads[param][key] = np.array(dfile[key][:])
 
-        for param in self._barr_params:
-            for container in self.data:
-                """
-                    evaluate the gradient thingy for each of these 
-                """
-                container["barr_scale"] = np.zeros(container.size)
-                container["power_scale"] = np.zeros(container.size)
-                container[param] = np.zeros(container.size)
+        for container in self.data:
+            if container.size==0:
+                continue
 
-                if container.size==0:
-                    continue
-
+            container["power_scale"] = np.zeros(container.size)
+            
+            for param in self._barr_params:
+                
+                """
+                    evaluate the gradient for each of these 
+                """
                 key = ""
                 if container["nubar"]<0:
                     key+="antinu"
@@ -89,33 +95,30 @@ class barr_gradients(Stage):
                     key+="tau"
                 
                 interp = RectBivariateSpline( grads[param]["costh_nodes"], np.log10(grads[param]["energy_nodes"]),grads[param]["conv_"+key])
-
-                #logging.debug("shape out is {} versus {} expected".format(np.shape(out), container.size))
                 container[param] = interp(container["true_coszen"], np.log10(container["true_energy"]), grid=False)
-
-                container.mark_changed(param)
 
     @profile
     def compute_function(self):
         for container in self.data:
+            if container.size==0:
+                continue
             # modify container[flux_key]
             container["barr_scale"] = ( 
-                container["barr_grad_WP"]*self.params.barr_grad_WP.value.m_as("dimensionless") + 
-                container["barr_grad_WM"]*self.params.barr_grad_WM.value.m_as("dimensionless") + 
-                container["barr_grad_YP"]*self.params.barr_grad_YP.value.m_as("dimensionless") +
-                container["barr_grad_YM"]*self.params.barr_grad_YM.value.m_as("dimensionless") +
-                container["barr_grad_ZP"]*self.params.barr_grad_ZP.value.m_as("dimensionless") +
-                container["barr_grad_ZM"]*self.params.barr_grad_ZM.value.m_as("dimensionless") 
+                container["WP"]*self.params.WP.value.m_as("dimensionless") + 
+                container["WM"]*self.params.WM.value.m_as("dimensionless") + 
+                container["YP"]*self.params.YP.value.m_as("dimensionless") +
+                container["YM"]*self.params.YM.value.m_as("dimensionless") +
+                container["ZP"]*self.params.ZP.value.m_as("dimensionless") +
+                container["ZM"]*self.params.ZM.value.m_as("dimensionless") 
                 ) 
-            #container["barr_scale"][container["barr_scale"] < 0.0]=0.0
-            container["power_scale"] = np.power(container["true_energy"]/PIVOT, -1*self.params.deltagamma.value.m_as("dimensionless"))
-            container.mark_changed("barr_scale")
-            container.mark_changed("power_scale")
+            container["power_scale"] = ((container["true_energy"]/PIVOT)**(self.params.deltagamma.value.m_as("dimensionless")))*self.params.conv_norm.value.m_as("dimensionless")
+
 
     def apply_function(self):
         for container in self.data:
             if container.size==0:
                 continue
-            container["weights"] = self.params.conv_norm.value.m_as("dimensionless")*(container["weights"] + container["barr_scale"])*container["power_scale"]
+            container["weights"] += container["barr_scale"]
+            container["weights"] *= container["power_scale"]
+            container["weights"][container["weights"]<0] = 0.0
                                     
-            container.mark_changed("weights")
