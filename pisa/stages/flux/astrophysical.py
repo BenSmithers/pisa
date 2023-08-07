@@ -2,15 +2,16 @@
 stage to implement getting the contribution to fluxes from astrophysical neutrino sources
 """
 import numpy as np
-from math import log10
+from math import log10, pi
+import pickle
 
 from pisa.utils.profiler import profile
 from pisa import FTYPE, TARGET, PISA_NUM_THREADS
 from pisa import ureg
-
 from pisa.core.stage import Stage
-
 from pisa.utils.log import logging
+from pisa.utils.correlated_param_stage import correlated_stage
+from pisa.utils.resources import find_resource
 
 from numba import njit, prange  # trivially parallelize for-loops
 
@@ -20,7 +21,6 @@ try:
 except ImportError:
     import nuSQuIDS as nsq
 
-from pisa.utils.correlated_param_stage import correlated_stage
 
 
 PIVOT = FTYPE(1.0e5)
@@ -45,10 +45,10 @@ class astrophysical(Stage):
     """
 
     def __init__(self, 
-    
             e_ratio = 1.0,
             mu_ratio = 1.0,
             tau_ratio = 1.0,
+            spline_file = "",
             **std_kwargs):
 
         self.num_neutrinos = 3 #flavors 
@@ -64,6 +64,9 @@ class astrophysical(Stage):
         self.abs_err =  1.0e-6
         self.concurrent_threads = PISA_NUM_THREADS if TARGET == "parallel" else 1
 
+        self._spline_file = spline_file if spline_file=="" else find_resource(spline_file)
+        self._power_law_ini = spline_file==""
+
         expected_params = ("astro_delta", "astro_norm")
 
         super().__init__(
@@ -77,15 +80,42 @@ class astrophysical(Stage):
         """
         flavors = self.num_neutrinos 
         neutrinos = 2 #nu/nubar
-        inistate = np.zeros(shape=(flavors, neutrinos,len(self.zeniths),  len(self.energies) ))
+        
+        if self._power_law_ini:
+            inistate = np.zeros(shape=(flavors, neutrinos,len(self.zeniths),  len(self.energies) ))
+            for i_flav in range(flavors):
+                for j_nu in range(neutrinos):
+                    _energies, _zeniths = np.meshgrid(self.energies , self.zeniths)
 
-        for i_flav in range(flavors):
-            for j_nu in range(neutrinos):
-                _energies, _zeniths = np.meshgrid(self.energies , self.zeniths)
+                    inistate[i_flav][j_nu] = self._central_norm*np.power((_energies/(1e9)) / PIVOT, self._central_gamma)
 
-                inistate[i_flav][j_nu] = self._central_norm*np.power((_energies/(1e9)) / PIVOT, self._central_gamma)
+            return np.transpose(inistate, axes=(2, 3, 1, 0))
+        else:
+            gpsplinefile = np.load(self._spline_file, allow_pickle=True)
+            try:
+                gpspline = gpsplinefile["spline"].item()
+            except pickle.UnpicklingError as e:
+                print("Pickle problem!")
+                print("Odds are the file was pickled using a different version of scipy.")
+                print(e)
 
-        return np.transpose(inistate, axes=(2, 3, 1, 0))
+            inistate =  np.ones(shape=(len(self.zeniths), len(self.energies), 2, 3 ))
+            loges = np.log10(self.energies/(1e9))
+            pure_zen = np.arccos(self.zeniths)
+
+            for izen in range(len(self.zeniths)):
+                for ie in range(len(self.energies)):
+                    flux = self._central_norm*((self.energies[ie]/(1e9))/PIVOT)**(self._central_gamma)
+
+                    azimuth = np.random.rand()*2*pi - pi
+                    if loges[ie]>7.95 or loges[ie]<1:
+                        inistate[izen][ie]*= flux
+                    else:
+                        flux_eval = 10**gpspline((loges[ie], pure_zen[izen], azimuth))
+                        inistate[izen][ie] *= (flux + flux_eval)
+
+            return inistate
+
 
     def setup_squid(self):
         """
