@@ -132,10 +132,15 @@ class hist(Stage):  # pylint: disable=invalid-name
                     unc_weights = np.ones(weights.shape)
                 transform = container["hist_transform"]
 
+                if "n_events" in container.keys:
+                    n_events = container["n_events"]
+                else:
+                    n_events = np.ones_like(container["weights"])
+
                 hist = (unc_weights*weights) @ transform
                 if self.error_method == "sumw2":
-                    sumw2 = np.square(unc_weights*weights) @ transform
-                    bin_unc2 = (np.square(unc_weights)*weights) @ transform
+                    sumw2 = np.square(unc_weights*weights)/n_events @ transform
+                    bin_unc2 = (np.square(unc_weights)*weights/n_events) @ transform
 
                 container.representation = self.apply_mode
                 container["weights"] = hist
@@ -175,6 +180,12 @@ class hist(Stage):  # pylint: disable=invalid-name
                 else:
                     unc_weights = np.ones(weights.shape)
                 
+                # this is necessary for fastmode MC where each MC event is made through a weighted sum of other events
+                if  "n_events" in container.keys:
+                    n_events = container["n_events"]
+                else:
+                    n_events = np.ones_like(container["weights"])
+
                 # The hist is now computed using a binning that is completely linear
                 # and regular
                 hist = histogram(
@@ -185,8 +196,9 @@ class hist(Stage):  # pylint: disable=invalid-name
                 )
 
                 if self.error_method == "sumw2":
-                    sumw2 = histogram(sample, np.square(unc_weights*weights), self.regularized_apply_mode, averaged=False)
-                    bin_unc2 = histogram(sample, np.square(unc_weights)*weights, self.regularized_apply_mode, averaged=False)
+                    sumw2 = histogram(sample, np.square(unc_weights*weights)/n_events, self.regularized_apply_mode, averaged=False)
+                    bin_unc2 = histogram(sample, np.square(unc_weights)*weights/n_events, self.regularized_apply_mode, averaged=False)
+
 
                 container.representation = self.apply_mode
                 container["weights"] = hist

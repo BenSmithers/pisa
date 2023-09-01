@@ -10,6 +10,8 @@ import pandas as pd
 from pisa import FTYPE
 from pisa.core.stage import Stage
 from pisa.utils import vectorizer
+from pisa.utils.log import logging
+
 from pisa.utils.resources import find_resource
 from pisa.utils.profiler import profile
 from pisa.core.container import Container
@@ -81,6 +83,11 @@ class csv_loader(Stage):
             container['reco_energy'] = events['reco_energy'].values.astype(FTYPE)
             container['reco_coszen'] = events['reco_coszen'].values.astype(FTYPE)
             container['pid'] = events['pid'].values.astype(FTYPE)
+      
+            if "n_events" in events:
+                container["n_events"] = events["n_events"].values.astype(int)
+            else:
+                container["n_events"] = np.ones(container.size, dtype=int)
             container.set_aux_data('nubar', nubar)
             container.set_aux_data('flav', flav)
 
@@ -94,4 +101,9 @@ class csv_loader(Stage):
 
     def apply_function(self):
         for container in self.data:
+            if len(container["weights"]==0):
+                logging.debug("Container {} is empty".format(container.name))
+
             container['weights'] = np.copy(container['initial_weights'])
+
+            logging.debug("weight sum {}".format(np.sum(container["weights"])))

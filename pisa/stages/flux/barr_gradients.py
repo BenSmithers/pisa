@@ -12,10 +12,6 @@ from pisa.utils.profiler import profile
 
 from scipy.interpolate import RectBivariateSpline
 
-from numba import njit, prange  # trivially parallelize for-loops
-
-
-
 from pisa import FTYPE, TARGET
 from pisa.core.stage import Stage
 from pisa.utils.resources import find_resource
@@ -57,7 +53,6 @@ class barr_gradients(Stage):
         self.data.representation = self.calc_mode
 
         logging.debug("Setting up barr gradient weighter stage")
-        _suffix = ".hdf5"
         grads = {}
 
         for param in self._barr_params:
@@ -70,14 +65,19 @@ class barr_gradients(Stage):
             grads[param]= {}
             for key in dfile.keys():
                 grads[param][key] = np.array(dfile[key][:])
+            print("Loaded {}".format(filename))
 
+        grad_sum = [0.0 for i in range(len(self._barr_params))]
+        total_evt = [0 for i in range(len(self._barr_params))]
+
+        self._per_event_effects = []
         for container in self.data:
             if container.size==0:
                 continue
 
             container["power_scale"] = np.zeros(container.size)
-            
-            for param in self._barr_params:
+            per_event_effect = []
+            for ip, param in enumerate(self._barr_params):
                 
                 """
                     evaluate the gradient for each of these 
@@ -95,30 +95,36 @@ class barr_gradients(Stage):
                     key+="tau"
                 
                 interp = RectBivariateSpline( grads[param]["costh_nodes"], np.log10(grads[param]["energy_nodes"]),grads[param]["conv_"+key])
-                container[param] = interp(container["true_coszen"], np.log10(container["true_energy"]), grid=False)
+                entry = interp(container["true_coszen"], np.log10(container["true_energy"]), grid=False)
+                per_event_effect.append(entry)
+      
+            self._per_event_effects.append(np.array(per_event_effect))
+        
 
-    @profile
     def compute_function(self):
+        self._param_cache = np.array([self.params[param].value.m_as("dimensionless") for param in self._barr_params])
         for container in self.data:
             if container.size==0:
                 continue
-            # modify container[flux_key]
-            container["barr_scale"] = ( 
-                container["WP"]*self.params.WP.value.m_as("dimensionless") + 
-                container["WM"]*self.params.WM.value.m_as("dimensionless") + 
-                container["YP"]*self.params.YP.value.m_as("dimensionless") +
-                container["YM"]*self.params.YM.value.m_as("dimensionless") +
-                container["ZP"]*self.params.ZP.value.m_as("dimensionless") +
-                container["ZM"]*self.params.ZM.value.m_as("dimensionless") 
-                ) 
-            container["power_scale"] = ((container["true_energy"]/PIVOT)**(self.params.deltagamma.value.m_as("dimensionless")))*self.params.conv_norm.value.m_as("dimensionless")
+            container["power_scale"] = self.params.conv_norm.value.m_as("dimensionless")*((container["true_energy"]/PIVOT)**(self.params.deltagamma.value.m_as("dimensionless")))
 
 
     def apply_function(self):
+        count = 0
         for container in self.data:
             if container.size==0:
                 continue
-            container["weights"] += container["barr_scale"]
-            container["weights"] *= container["power_scale"]
+
+            effect = self._param_cache*self._per_event_effects[count].T
+
+            # a little hacky, but we do this to get a shape-only effect 
+            norm = np.sum(container["weights"]*container['weighted_aeff'])
+            container["weights"] = container["weights"] + np.sum(effect, axis=1)
+            post_norm = np.sum(container["weights"]*container['weighted_aeff'])
+            container["weights"] *= norm/post_norm
+
             container["weights"][container["weights"]<0] = 0.0
+            container["weights"] *= container["power_scale"] # force a shape-only effect for the gradients 
+            count += 1
+            
                                     

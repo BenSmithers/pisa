@@ -24,7 +24,7 @@ from pisa import ureg
 from pisa.core.map import MapSet
 from pisa.core.pipeline import Pipeline
 from pisa.core.distribution_maker import DistributionMaker
-from pisa.core.param import ParamSet, Param
+from pisa.core.param import ParamSet, Param, DerivedParam
 from pisa.utils.config_parser import PISAConfigParser
 from pisa.utils.fileio import expand, mkdir, to_file
 from pisa.utils.hash import hash_obj
@@ -91,7 +91,44 @@ class Detectors(object):
                     n += 1
             if n < 2:
                 raise NameError('Shared param %s only a free param in less than 2 detectors.' % sp)
+        
+        self.init_params()
+
+        self._spi = None
+        self._spi_configured = False
                 
+    def add_covariance(self, covmat):
+        """
+            Adds covariance matrices to the distribution makers in this Detectors object.
+
+            If only one covariance matrix is given, this is applied to all of them 
+        """
+
+        new_params = ParamSet()
+        for key in covmat:
+            new_params.extend(self.params[key])
+
+        new_params.add_covariance(covmat)
+        print(new_params)
+
+        # shared params is a list of names
+        for param in new_params:
+            if "rotated" in param.name:
+                pre_rotated = "_".join(param.name.split("_")[:-1])
+                if pre_rotated in self.shared_params:
+                    
+                    self.shared_params.append(param.name)
+                    print("appending {}".format(param.name))
+                    print("removing {}".format(pre_rotated))
+                    self.shared_params.remove(pre_rotated)
+                self._params.extend(param)
+            else:
+                self._params.replace(param)
+        for dmaker in self:
+            dmaker.extend_params(new_params)
+            #for pipe in dmaker.pipelines:
+            #    pipe._add_rotated(new_params, suppress_warning=True)
+
     def __repr__(self):
         return self.tabulate(tablefmt="presto")
 
@@ -146,24 +183,25 @@ class Detectors(object):
         outputs = [distribution_maker.get_outputs(**kwargs) for distribution_maker in self]
         return outputs
 
-    def update_params(self, params):
-        for distribution_maker in self:
-            distribution_maker.update_params(params)
-
-        #if None in self.det_names: return # No detector names
-
-        if isinstance(params,Param): params = ParamSet(params) # just for the following
-
-        for p in params.names: # now update params with det_names inside
-            for i, det_name in enumerate(self.det_names):
-                if det_name in p:
-                    cp = deepcopy(params[p])
-                    cp.name = cp.name.replace('_'+det_name, "")
-                    self._distribution_makers[i].update_params(cp)
+    def update_params(self, ps):
+        if isinstance(ps,Param): ps = ParamSet(ps)
+            
+        for distribution_maker in self.distribution_makers:
+            # ps = deepcopy(params)
+            for p in ps.names:
+                if distribution_maker.detector_name in p:
+                    p_name = p.replace('_'+distribution_maker.detector_name, "")
+                    if p_name in ps.names:
+                        ps.remove(p_name)
+                    ps[p].name = p_name
+            distribution_maker.update_params(ps)
+        self.init_params()
 
     def select_params(self, selections, error_on_missing=True):
         for distribution_maker in self:
             distribution_maker.select_params(selections=selections, error_on_missing=error_on_missing)
+        self.init_params()
+
             
     @property
     def distribution_makers(self):
@@ -171,6 +209,9 @@ class Detectors(object):
 
     @property
     def params(self):
+        return self._params
+    
+    def init_params(self):
         """Returns a ParamSet including all params of all detectors. First the shared params
         (if there are some), then all the "single detector" params. If two detectors use a
         parameter with the same name (but not shared), the name of the detector is added to the
@@ -190,13 +231,35 @@ class Detectors(object):
                 if param.name in self.shared_params:
                     continue # shared param is already in param set, can continue with the next param
                 elif param.name in params.names: # two parameters with the same name but not shared 
-                    # add detector name to the parameter name
                     changed_param = deepcopy(param)
-                    changed_param.name = param.name + '_' + distribution_maker.detector_name
+                    # add detector name to the parameter name
+                    changed_param.name = changed_param.name + '_' + distribution_maker.detector_name
                     params.extend(changed_param)
                 else:
                     params.extend(param)
-        return params
+        self._params = params
+        self._fpi = None
+        self._spi_configured = False
+        self._fpi_configured = False
+
+    @property
+    def full_index_list(self):
+        """
+            This is a more grown-up version of the shared_parameter_index_list
+
+            It is list of length equal to the length of detectors 
+            The sub-lists are as long as the number of parameters in that detector
+            EAch entry in the sub-list is that parameter's index in the full list 
+        """
+        if self._fpi_configured:
+            return self._fpi
+
+        all_names = self.params.free.names
+
+        full_param_index = [[all_names.index(name) for name in distribution_maker.params.free.names] for distribution_maker in self]
+        self._fpi = full_param_index
+        self._fpi_configured = True
+        return self._fpi
 
     @property
     def shared_param_ind_list(self):
@@ -204,6 +267,8 @@ class Detectors(object):
         params in the free params of the DistributionMaker (that belongs to the detector)
         together with their position in the shared parameter list.
         """
+        if self._spi_configured:
+            return self._spi
         if not self.shared_params: return []
 
         shared_param_ind_list = []
@@ -214,6 +279,9 @@ class Detectors(object):
                 if p_name in self.shared_params:
                     spi.append((free_names.index(p_name),self.shared_params.index(p_name)))
             shared_param_ind_list.append(spi)
+
+        self._spi = shared_param_ind_list
+        self._spi_configured = True
         return shared_param_ind_list
             
     @property
@@ -221,7 +289,7 @@ class Detectors(object):
         selections = None
         for distribution_maker in self:
             if selections != None and sorted(distribution_maker.param_selections) != selections:
-                raise ('Different param_selections for different detectors.')
+                raise AssertionError('Different param_selections for different detectors.')
             selections = sorted(distribution_maker.param_selections)
         return selections
 
@@ -312,30 +380,11 @@ class Detectors(object):
     def _set_rescaled_free_params(self, rvalues):
         """Set free param values given a simple list of [0,1]-rescaled,
         dimensionless values
-        """
-        if not isinstance(rvalues,list):
-            rvalues = list(rvalues)
-        
-        if self.shared_params == []:
-            for d in self:
-                rp = []
-                for j in range(len(d.params.free)):
-                    rp.append(rvalues.pop(0))
-                d._set_rescaled_free_params(rp)
-                
-        else:
-            sp = [] # first get the shared params
-            for i in range(len(self.shared_params)):
-                sp.append(rvalues.pop(0))
-            spi = self.shared_param_ind_list
+        """ 
 
-            for i in range(len(self._distribution_makers)):
-                rp = []
-                for j in range(len(self._distribution_makers[i].params.free) - len(spi[i])):
-                    rp.append(rvalues.pop(0))
-                for j in range(len(spi[i])):
-                    rp.insert(spi[i][j][0],sp[spi[i][j][1]])
-                self._distribution_makers[i]._set_rescaled_free_params(rp)
+        for index_d, distmaker in enumerate(self):
+            these_values = [ rvalues[self.full_index_list[index_d][j]] for j in range(len(distmaker.params.free)) ]
+            distmaker._set_rescaled_free_params(these_values)
 
 
 def test_Detectors(verbosity=Levels.WARN):
