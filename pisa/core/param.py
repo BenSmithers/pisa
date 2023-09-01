@@ -39,7 +39,7 @@ from pisa.utils.resources import find_resource
 
 __all__ = [
     'Param',
-    'DerivedParam'
+    'DerivedParam',
     'ParamSet',
     'ParamSelector',
     'test_Param',
@@ -743,7 +743,7 @@ class DerivedParam(Param):
         """
             The value of this Derived Parameter is determined by calling the configured 'callable' with the parameters it depends on
         """
-        return self.callable(**self.dependson)
+        return self.callable(**self.dependson)*ureg.dimensionless
 
     @property
     def state(self)->dict:
@@ -863,6 +863,13 @@ class ParamSet(MutableSequence, Set):
         # if we do not normalize, then the hash will change upon evaluating unit changes
         # I think because the changed units are cached in the object (Philipp)
         self.normalize_values = True
+
+    @property
+    def has_derived(self)->bool:
+        """
+        Returns whether or not this set contains a derived parameter 
+        """
+        return any(isinstance(par, DerivedParam) for par in self)
 
     @property
     def serializable_state(self):
@@ -1039,17 +1046,12 @@ class ParamSet(MutableSequence, Set):
                 This is a linear transformation using the eivenvectors of the covariance matrix
             """
 
-            v_max = 0
-            v_min = 0
-            for j in range(dim): # number of paramters, dimensionality 
-                v_max += inv_t[j][i]*(ranges_x[j][1] - means[j]) if inv_t[j][i]>0 else inv_t[j][i]*(ranges_x[j][0] - means[j]) 
-                v_min += inv_t[j][i]*(ranges_x[j][1] - means[j]) if inv_t[j][i]<0 else inv_t[j][i]*(ranges_x[j][0] - means[j]) 
 
             new = Param(
                 name = param.name + "_rotated",
                 value = 0.0*ureg.dimensionless, # get the centers. These will be zero since we subtract the mean
                 prior = new_prior,
-                range = (v_min, v_max),
+                range = (-5*new_sigmas[i], 5*new_sigmas[i]), # allow a 5sigma width on these 
                 is_fixed = False,
                 is_discrete= False,
                 scales_as_log=param.scales_as_log,
@@ -1061,6 +1063,9 @@ class ParamSet(MutableSequence, Set):
             self.update(new) # add in this new parameter 
 
         def build_func(index):
+            """
+            Builds a function that is then used to calculate one of the original parameters 
+            """
             all_vars = [ callable.Var(new_par.name) for new_par in new_parameters ]
 
             function = transformation[0][index]*all_vars[0]

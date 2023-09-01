@@ -197,6 +197,7 @@ class DistributionMaker(object):
             for pipeline in self:
                 pipeline.update_params(all_params, existing_must_match=True, extend=False)
         self.select_params(original_selection)
+        self._index_config = False
 
     def __repr__(self):
         return self.tabulate(tablefmt="presto")
@@ -281,9 +282,15 @@ class DistributionMaker(object):
 
         return outputs
 
+    def extend_params(self, params):
+        for pipeline in self:
+            pipeline.update_params(params, False, True)
+        self._index_config = False
+
     def update_params(self, params):
         for pipeline in self:
             pipeline.update_params(params)
+        self._index_config = False
 
     def select_params(self, selections, error_on_missing=True):
         successes = 0
@@ -311,6 +318,7 @@ class DistributionMaker(object):
                         "selection, the following were available: %s."
                         " This may cause issues.", possible_selections
                     )
+        self._index_config = False
 
     def add_covariance(self,covmat):
         """
@@ -323,13 +331,22 @@ class DistributionMaker(object):
             
             See the docstring in "pisa.core.param.ParamSet" for more 
         """
-        paramset = self.params
-        
+
+        paramset = ParamSet()
+        for key in covmat:
+            paramset.extend(self.params[key])
         paramset.add_covariance(covmat)
+
         self.update_params(paramset)
 
+        success = False
         for pipeline in self.pipelines:
-            pipeline._add_rotated(paramset, suppress_warning=True)
+            retval = pipeline._add_rotated(paramset, suppress_warning=True)
+            success = success or retval
+
+        if not success:
+            raise ValueError("unsuccessful?")
+        self._index_config = False
 
     @property
     def pipelines(self)->'list[Pipeline]':
@@ -416,6 +433,7 @@ class DistributionMaker(object):
                         'Trying to set value for "%s", a parameter that is'
                         ' fixed in at least one pipeline' %name
                     )
+        self._index_config = False
 
     def randomize_free_params(self, random_state=None):
         if random_state is None:
@@ -441,13 +459,32 @@ class DistributionMaker(object):
         for p in self:
             p.params.set_nominal_by_current_values()
 
+    @property
+    def param_index_list(self):
+        """
+            
+        """
+        if self._index_config:
+            return self._pil
+        all_names = self.params.free.names
+        self._pil = [[all_names.index(name) for name in pipeline.params.free.names] for pipeline in self]
+
+        self._index_config = True
+        return self._pil
+            
+
     def _set_rescaled_free_params(self, rvalues):
         """Set free param values given a simple list of [0,1]-rescaled,
         dimensionless values
 
         """
         names = self.params.free.names
-        for pipeline in self:
+        for ip, pipeline in enumerate(self):
+            free_params= pipeline.params.free
+            these_values = [rvalues[self.param_index_list[ip][j]] for j in range(len(free_params))]
+            free_params._rescaled_values = these_values
+
+            return 
             for name, rvalue in zip(names, rvalues):
                 if name in pipeline.params.free.names:
                     pipeline.params[name]._rescaled_value = rvalue # pylint: disable=protected-access

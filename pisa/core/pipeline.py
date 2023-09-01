@@ -343,17 +343,16 @@ class Pipeline(object):
             So we go to the first stage we find that has one of the original parameters and manually add this in 
             
         """
-        if self._covariance_set:
-            logging.warn("Tried to add covariance matrix while one is already here.")
-            logging.fatal("Add larger covariance matrix rather than calling this multiple times")
-
-        paramset = self.params
-        paramset.add_covariance(covmat)
+        basic = ParamSet()
+        for key in covmat:
+            basic.extend(self.params[key])
+        basic.add_covariance(covmat)
+        
         self._covariance_set = True
 
         # this should go and replace existing stage parameters with the new ones 
-        self.update_params(paramset)
-        self._add_rotated(paramset)
+        self.update_params(basic)
+        self._add_rotated(basic)
 
     def _add_rotated(self, paramset:ParamSet, suppress_warning=False):
         """
@@ -372,17 +371,20 @@ class Pipeline(object):
         if len(depends.keys())==0:
             if not suppress_warning:
                 logging.warn("Added covariance matrix but found no Derived Params")
-            return 
+            return False
         
+        success = False
         # now we find where a derived parameter lives 
         for stage in self.stages:
+            #stage._param_selector.update(paramset, None, existing_must_match=False, extend=True)
             included = stage._param_selector.params.names
             if derived_name in included:
+                success = True
                 # TODO incorporate selector !! 
                 # and extend that stage's selections with our new rotated params!  
-                for param in depends.values():
-                    stage._param_selector.update(param, existing_must_match=False, extend=True)
-                break 
+                stage._param_selector.update(paramset)
+
+        return success
 
     def run(self):
         """Run the pipeline to compute"""
