@@ -32,7 +32,7 @@ class correlated_stage(Stage):
         data = json.load(_obj)
         _obj.close()
         self._dim = len(data.keys())
-
+        
         self._correlation = np.zeros(shape=(self._dim, self._dim))
         for i, key in enumerate(data.keys()):
             for j, subkey in enumerate(data[key].keys()):
@@ -106,6 +106,7 @@ class correlated_stage(Stage):
             if self._as_gradients:
                 effect = self._param_cache*self._per_event_effects[count].T
                 container["weights"] = container["weights"] + np.sum(effect, axis=1)
+
             else:
                 effect = 1.0 + self._param_cache*self._per_event_effects[count].T
 

@@ -61,14 +61,11 @@ class old_airs(Stage):
             theta = container["true_coszen"]
 
             # get the mceq angle, then convert that back to the normal zenith 
-            # sin(pi - theta)/re = sin(mceq)/(re - dep)
-            
-            #mceq_angle = np.arcsin(np.sin(pi-np.arccos(theta))*(re-depth)/re)
-            #eff_zen = pi - re*np.sin(mceq_angle)/(re-depth)
+
             eff_zen = theta*1.0
             eff_zen[eff_zen>0.1] = 0.1
             container["airs_cache"] = self.spline_table.evaluate_simple(
-                (np.log10(container["true_energy"]), eff_zen) ## mirror it around coszen=0
+                (np.log10(container["true_energy"]), theta) ## mirror it around coszen=0
             )            
     
     def apply_function(self):

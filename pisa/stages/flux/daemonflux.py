@@ -55,38 +55,13 @@ class daemonflux(correlated_stage):
         self._gradients = {}
         self.prompt = bool(prompt)
 
-        self.daemon_params = [
-            'le_Kplus' ,
-            'le_Kminus' ,
-            'le_piplus' ,
-            'le_piminus' ,
-            'he_Kplus',
-            'he_Kminus',
-            'he_piplus',
-            'he_piminus',
-            'he_n',
-            'he_p',
-            'vhe1_piplus',
-            'vhe1_piminus',
-            'vhe3_Kplus',
-            'vhe3_Kminus',
-            'vhe3_n',
-            'vhe3_p',
-            'vhe3_piplus',
-            'vhe3_piminus',
-            'GSF_1',
-            'GSF_2',
-            'GSF_3',
-            'GSF_4',
-            'GSF_5',
-            'GSF_6'
-            ]
 
         correlated_stage.__init__(self, 
                         correlation_file, 
                         as_gradients=True,
                         **std_kwargs)
         self._as_gradients = True
+
 
     @property
     def name_root(self):
@@ -99,7 +74,7 @@ class daemonflux(correlated_stage):
 
         # first we load in the datafiles and store them in a local namespace 
         gradients = {}
-        for param in self.daemon_params:
+        for param in self._effects:
             filename = os.path.join(
                 self.gradient_folder,
                 self.file_template.format(param)
@@ -121,7 +96,7 @@ class daemonflux(correlated_stage):
                 continue
 
             per_event_effect = []
-            for param in self.daemon_params:
+            for param in self._effects:
                 
                 container[param] = np.zeros(container.size)
 

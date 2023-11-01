@@ -38,7 +38,11 @@ class astrophysical(Stage):
         Expected params are .. ::
             astro_delta : quantity (dimensionless)
             astro_norm : quantity (dimensionless)
-
+            astr_flavor : the ratio between the (numu / (nue+nutau))
+                0 is all numu (0-3-0)
+                2 is all nue+nutau (1.5-0-1.5)
+                1 is perfectly balanced (1-1-1)
+            
     TODO: Add more astrophysical flux implementations
         - Broken power law
         - whatever else is needed... 
@@ -48,6 +52,7 @@ class astrophysical(Stage):
             e_ratio = 1.0,
             mu_ratio = 1.0,
             tau_ratio = 1.0,
+            flavor_unc = False,
             spline_file = "",
             **std_kwargs):
 
@@ -67,7 +72,11 @@ class astrophysical(Stage):
         self._spline_file = spline_file if spline_file=="" else find_resource(spline_file)
         self._power_law_ini = spline_file==""
 
-        expected_params = ("astro_delta", "astro_norm")
+        self.flavor_unc = flavor_unc
+        if flavor_unc:
+            expected_params = ("astro_delta", "astro_norm", "astr_flavor")
+        else:
+            expected_params = ("astro_delta", "astro_norm")
 
         super().__init__(
             expected_params=expected_params,
@@ -171,6 +180,18 @@ class astrophysical(Stage):
         self.squid_atm.Set_initial_state(self.get_initial_state(), nsq.Basis.flavor)
         self.squid_atm.EvolveState()
 
+        # e / mu / tau
+        _muon_damping = np.array([0.19, 0.43, 0])*3
+        _muon_damping[2] = 3 - _muon_damping[0] - _muon_damping[1]
+
+        _neutron_decay = np.array([0.55,0.19, 0])*3
+        _neutron_decay[2] = 3 - _neutron_decay[0] - _neutron_decay[1]
+
+        self._diff_vector = 0.5*(_neutron_decay - _muon_damping)
+
+        self._nominal = _muon_damping + self._diff_vector
+
+
         # Loop over containers
         for container in self.data:
             scale_e = container["true_energy"]*(1e9)
@@ -209,11 +230,21 @@ class astrophysical(Stage):
 
     @profile
     def apply_function(self):
+        # calculate the flavor balance 
+        
+        if self.flavor_unc:
+            flavors = self._nominal + self._diff_vector*self.params.astr_flavor.value.m_as("dimensionless")
+            flavors[2] =3 -flavors[2] -flavors[1]
+        else:
+            flavors = self._nominal
+
         for container in self.data:
             if container.size==0:
                 continue
+            
+            # accesses the flavor scaling for this container
+            scale = flavors[container["flav"]]
 
-
-            container["weights"] = container["weights"] * container["astro_flux_nominal"] * container["astro_effect"]
+            container["weights"] = scale * container["weights"] * container["astro_flux_nominal"] * container["astro_effect"]
 
 PIVOT = FTYPE(1.0e5)

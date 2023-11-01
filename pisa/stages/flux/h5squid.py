@@ -26,9 +26,9 @@ from scipy.interpolate import RectBivariateSpline
 from pisa.utils.profiler import profile
 
 try:
-    import nuSQUIDSpy as nsq
-except ImportError:
     import nuSQuIDS as nsq
+except ImportError:
+    import nuSQUIDSpy as nsq
 
 class h5squid(Stage):
     """
@@ -49,7 +49,7 @@ class h5squid(Stage):
             th34:float,
             dmsq:float,
             fluxfile:str,
-            is_nusquids=False,
+            is_nusquids=True,
             convmode=True,
             rel_err=None,
             abs_err=None,
@@ -77,91 +77,6 @@ class h5squid(Stage):
             **std_kwargs
         )
 
-
-    def setup_squid(self):
-        """
-        Prepare a nuSQuIDS atmosphere object we'll use for flux calculations 
-        """
-        this_osc = nsq.nuSQUIDSAtm(
-                self.zeniths,
-                self.energies,
-                self.num_neutrinos,
-                nsq.NeutrinoType.both,
-                True # earth interactions
-        )
-
-        this_osc.Set_rel_error(self.rel_err)
-        this_osc.Set_abs_error(self.abs_err)
-        this_osc.Set_EvalThreads(self.concurrent_threads)
-        this_osc.Set_IncludeOscillations(True)
-
-        this_osc.Set_MixingAngle(0,1,0.563942)
-        this_osc.Set_MixingAngle(0,2,0.154085)
-        this_osc.Set_MixingAngle(1,2,0.785398)
-
-        this_osc.Set_SquareMassDifference(1,7.65e-05)
-        this_osc.Set_SquareMassDifference(2,0.00247)
-
-        this_osc.Set_TauRegeneration(True)
-
-        this_osc.Set_MixingAngle(0,3,self.theta14)
-        this_osc.Set_MixingAngle(1,3,self.theta24)
-        this_osc.Set_MixingAngle(2,3,self.theta34)
-        this_osc.Set_SquareMassDifference(3,self.dmsq)
-
-        this_osc.Set_GSL_step(nsq.GSL_STEP_FUNCTIONS.GSL_STEP_RK4)
-
-
-        #this_osc.Set_CPPhase(0, 3, self.params.deltacp14.value.m_as("rad"))
-        #this_osc.Set_CPPhase(1, 3, self.params.deltacp24.value.m_as("rad")) 
-
-        #this_osc.Set_CPPhase(0, 2, self.params.deltacp.value.m_as("rad"))
-
-        return this_osc
-
-    def get_initial_state(self, only_flavor=-1)->np.ndarray:
-        """
-            Returns the initial state for nusquids. Assumes the energies are provided in eV
-            and the zeniths as cos(zeniths)
-
-            if `only_flavor` is provided, this will skip all flavors that aren't that flavor
-        """
-
-        flavors = self.num_neutrinos
-        neutrinos = 2
-        inistate = np.zeros(shape=(flavors, neutrinos,len(self.zeniths),  len(self.energies) ))
-        logging.debug("shape of inistate: {}".format(np.shape(inistate)))
-        for i_flav in range(flavors):
-            for j_nu in range(neutrinos):
-                if (only_flavor!=-1) and (only_flavor!=i_flav):
-                    continue
-                key = ""
-                if self._convmode:
-                    key = "conv_"
-                else:
-                    key = "pr_"
-
-                if j_nu == 1:
-                    key+="antinu"
-                else:
-                    key+="nu"
-                
-                if i_flav==0:
-                    key+="e"
-                elif i_flav==1:
-                    key+="mu"
-                elif i_flav==2:
-                    key+="tau"
-                else:
-                    continue
-
-                inistate[i_flav][j_nu] = np.abs(self.fluxes[key](self.zeniths, np.log10(self.energies/(1e9))))
-        
-        # transpose this initial state into a nuSQuIDS-friendly one
-        inistate = np.transpose(inistate, axes=(2, 3, 1, 0))
-        logging.debug("shape of inistate: {}".format(np.shape(inistate)))
-        return inistate
-
     def setup_function(self):
         """
         Multi-step process
@@ -183,52 +98,34 @@ class h5squid(Stage):
         
         if self.is_nusquids:
             self.squid_atm = nsq.nuSQUIDSAtm(self.fluxfile)
-        else:
-            self.squid_atm = self.setup_squid()
-            self._squid_flux = h5.File(self.fluxfile, 'r')
-        
-            energy_nodes = np.array(self._squid_flux["energy_nodes"][:])
-            cos_nodes = np.array(self._squid_flux["costh_nodes"][:])
-
-            self.fluxes = {}
-            for key in self._squid_flux.keys():
-                if key=="energy_nodes" or key=="costh_nodes":
-                    continue
-                if self._convmode and "pr" in key: #if we're in conv, skip prompt 
-                    continue
-                if (not self._convmode) and "conv" in key: # if we're in pr, skip conv 
-                    continue
-                self.fluxes[key] = RectBivariateSpline(cos_nodes, np.log10(energy_nodes), np.array(self._squid_flux[key][:]))
-
             
-            self.squid_atm.Set_initial_state(self.get_initial_state(), nsq.Basis.flavor)
-            self.squid_atm.EvolveState()
-
-        self.data.representation = self.calc_mode
-        if self.data.is_map:
-
-            self.data.link_containers('nue',['nue_cc','nue_nc'])
-            self.data.link_containers('nuebar',['nuebar_cc','nuebar_nc'])
-            self.data.link_containers('numu',['numu_cc','numu_nc'])
-            self.data.link_containers('numubar',['numubar_cc','numubar_nc'])    
-            self.data.link_containers('nutau',['nutau_cc','nutau_nc'])
-            self.data.link_containers('nutaubar',['nutaubar_cc','nutaubar_nc'])
-
+        else:
+            raise NotImplementedError()
 
         for container in self.data:
+            if container.size==0:
+                continue
+            name = container.name
+            if 'e' in name:
+                flav = nsq.NeutrinoCrossSections_NeutrinoFlavor.electron
+            elif 'mu' in name:
+                flav = nsq.NeutrinoCrossSections_NeutrinoFlavor.muon
+            elif 'tau' in name:
+                flav = nsq.NeutrinoCrossSections_NeutrinoFlavor.tau
+
+            i_nu = nsq.NeutrinoCrossSections_NeutrinoType.antineutrino if container["nubar"] < 0 else nsq.NeutrinoCrossSections_NeutrinoType.neutrino
+
             container['evt_flux'] = np.zeros(container.size, dtype=FTYPE)
 
-        
             scale_e = container["true_energy"]*(1e9)
-            for i in range(container.shape[0]):
-                
-                i_nu = 1 if container["nubar"] < 0 else 0
-                container["evt_flux"][i] = self.squid_atm.EvalFlavor( container["flav"], container["true_coszen"][i],  scale_e[i], i_nu )
+            for i in range(container.size):
+                container["evt_flux"][i] = self.squid_atm.EvalFlavor( flav, container["true_coszen"][i],  scale_e[i], i_nu )
             
             container.mark_changed("evt_flux")
 
     def apply_function(self):
         for container in self.data:
+            if container.size==0:
+                continue
             container["weights"] = container["weights"] * np.abs(container["evt_flux"])
 
-            container.mark_changed("weights")
